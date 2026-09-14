@@ -108,6 +108,9 @@
         <button data-mode="melt">Derreter</button>
         <button data-mode="degrade">Degradação</button>
         <button data-mode="block">Bloco denso</button>
+        <button data-mode="halftone">Halftone</button>
+        <button data-mode="pixelsort">Pixel Sort</button>
+        <button data-mode="crosshatch">Crosshatch</button>
       </div>
     </div>
 
@@ -125,6 +128,25 @@
       <div class="row">
         <label for="bgColor">Fundo</label>
         <input type="color" id="bgColor" value="#f2f0ea">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Ajustes</h2>
+      <div class="row">
+        <label for="adjBrightness">Brilho</label>
+        <input type="range" id="adjBrightness" autocomplete="off" min="-50" max="50" value="0">
+        <span class="val" id="adjBrightnessVal">0</span>
+      </div>
+      <div class="row">
+        <label for="adjContrast">Contraste</label>
+        <input type="range" id="adjContrast" autocomplete="off" min="-50" max="100" value="0">
+        <span class="val" id="adjContrastVal">0</span>
+      </div>
+      <div class="row">
+        <label for="adjGamma">Gama</label>
+        <input type="range" id="adjGamma" autocomplete="off" min="40" max="250" value="100">
+        <span class="val" id="adjGammaVal">100</span>
       </div>
     </div>
 
@@ -187,8 +209,12 @@ const state = {
   seed: 7.3,
   blur: { amount: 45, dither: 55, grain: 30 },
   melt: { amount: 45, scale: 35, drip: 55 },
-  degrade: { halftone: 45, glitch: 35, dropout: 30, contrast: 20 },
+  degrade: { glitch: 35, dropout: 30, contrast: 20 },
   block: { size: 60, spacing: 0, removeSpaces: true },
+  halftone: { shape: "circle", scale: 85, spacing: 40, angle: 45, invert: false },
+  pixelsort: { threshold: 50, direction: "horizontal", chance: 75, reverse: false },
+  crosshatch: { scale: 45, thickness: 30, angle: 45, softness: 25 },
+  adjust: { brightness: 0, contrast: 0, gamma: 100 },
 };
 
 let RENDER_W = 0, RENDER_H = 0;
@@ -365,7 +391,6 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uTex;
-uniform float uHalftone;
 uniform float uGlitch;
 uniform float uDropout;
 uniform float uContrast;
@@ -385,27 +410,110 @@ void main(){
 
   float cov = texture(uTex, uv).a;
 
-  vec2 px = uv * uResolution;
-  float ang = 0.7854;
-  mat2 rot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
-  vec2 cellUv = rot*px;
-  float cellSize = mix(28.0, 6.0, 0.0) ;
-  cellSize = 18.0;
-  vec2 cellPos = fract(cellUv/cellSize)-0.5;
-  float dist = length(cellPos);
-  float dotRadius = sqrt(clamp(cov,0.0,1.0))*0.5;
-  float halftoneMask = 1.0 - smoothstep(dotRadius-0.06, dotRadius+0.06, dist);
-  float halftoneResult = mix(cov, halftoneMask, uHalftone);
-
   float dropN = hash(floor(uv*uResolution*0.12));
   float dropout = 1.0 - uDropout*step(dropN, 0.16);
 
-  float finalAlpha = halftoneResult * dropout;
+  float finalAlpha = cov * dropout;
   finalAlpha = clamp((finalAlpha-0.5)*(1.0+uContrast*2.0)+0.5, 0.0, 1.0);
 
   float grain = (hash(gl_FragCoord.xy*1.3)-0.5)*0.06;
   vec3 col = mix(uBg, uInk, finalAlpha) + vec3(grain);
 
+  fragColor = vec4(clamp(col,0.0,1.0), 1.0);
+}`;
+
+const FRAG_HALFTONE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform float uShape; // 0=círculo 1=linha 2=quadrado
+uniform float uDotScale;
+uniform float uSpacing;
+uniform float uAngleDeg;
+uniform float uInvert;
+uniform vec3 uInk;
+uniform vec3 uBg;
+uniform vec2 uResolution;
+void main(){
+  float cov = texture(uTex, vUv).a;
+  if (uInvert > 0.5) cov = 1.0 - cov;
+
+  vec2 px = vUv * uResolution;
+  float ang = radians(uAngleDeg);
+  mat2 rot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
+  vec2 cellUv = rot*px;
+  float cellSize = uSpacing;
+  vec2 cellPos = fract(cellUv/cellSize)-0.5;
+
+  float amount = sqrt(clamp(cov,0.0,1.0)) * (uDotScale/100.0);
+  float dist;
+  if (uShape < 0.5){
+    dist = length(cellPos);
+  } else if (uShape < 1.5){
+    dist = abs(cellPos.y);
+  } else {
+    dist = max(abs(cellPos.x), abs(cellPos.y));
+  }
+  float mask = 1.0 - smoothstep(amount*0.5-0.05, amount*0.5+0.05, dist);
+  // sem isso, a forma "linha"/"quadrado" desenha um traço fino cruzando o
+  // fundo inteiro (a distância até a linha é zero ao longo dela toda, não
+  // só num ponto como no círculo) — corta qualquer marca fora da tinta.
+  mask *= smoothstep(0.015, 0.05, cov);
+
+  fragColor = vec4(mix(uBg, uInk, mask), 1.0);
+}`;
+
+const FRAG_DIRECT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+void main(){
+  fragColor = vec4(texture(uTex, vUv).rgb, 1.0);
+}`;
+
+const FRAG_CROSSHATCH = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform float uScale;
+uniform float uThickness;
+uniform float uAngleDeg;
+uniform vec3 uInk;
+uniform vec3 uBg;
+uniform vec2 uResolution;
+void main(){
+  float tone = texture(uTex, vUv).a;
+  float ang = radians(uAngleDeg);
+  mat2 rot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
+  vec2 p = rot*(vUv*uResolution)/uScale;
+  float lw = clamp(uThickness/100.0, 0.02, 0.9);
+
+  float hatch = 0.0;
+  if (fract(p.x+p.y) < lw) hatch = 1.0;
+  if (tone > 0.22){ if (fract(p.x-p.y) < lw) hatch = 1.0; }
+  if (tone > 0.48){ if (fract(p.x+p.y+0.5) < lw) hatch = 1.0; }
+  if (tone > 0.74){ if (fract(p.x-p.y+0.5) < lw) hatch = 1.0; }
+
+  float finalAlpha = hatch * step(0.05, tone);
+  fragColor = vec4(mix(uBg, uInk, finalAlpha), 1.0);
+}`;
+
+const FRAG_ADJUST = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform float uBrightness;
+uniform float uContrast;
+uniform float uGamma;
+void main(){
+  vec3 col = texture(uTex, vUv).rgb;
+  col = (col-0.5)*(1.0+uContrast) + 0.5 + uBrightness;
+  col = clamp(col, 0.0, 1.0);
+  col = pow(col, vec3(1.0/uGamma));
   fragColor = vec4(clamp(col,0.0,1.0), 1.0);
 }`;
 
@@ -425,6 +533,10 @@ const passProg = linkProgram(VERT_QUAD, FRAG_PASSTHROUGH);
 const blurDitherProg = linkProgram(VERT_QUAD, FRAG_BLURDITHER);
 const meltProg = linkProgram(VERT_QUAD, FRAG_MELT);
 const degradeProg = linkProgram(VERT_QUAD, FRAG_DEGRADE);
+const halftoneProg = linkProgram(VERT_QUAD, FRAG_HALFTONE);
+const directProg = linkProgram(VERT_QUAD, FRAG_DIRECT);
+const crosshatchProg = linkProgram(VERT_QUAD, FRAG_CROSSHATCH);
+const adjustProg = linkProgram(VERT_QUAD, FRAG_ADJUST);
 
 function createTexture(w,h){
   const tex = gl.createTexture();
@@ -448,6 +560,8 @@ let textTex = null;
 let blurredTex = null, blurredFBO = null;
 let pingTex, pingFBO, pongTex, pongFBO;
 let edgeTex = null;
+let effectTex = null, effectFBO = null;
+let pixelSortTex = null;
 let rasterCanvas = document.createElement("canvas");
 
 function ensureTargets(w,h){
@@ -456,6 +570,8 @@ function ensureTargets(w,h){
   pingTex = createTexture(w,h); pingFBO = createFBO(pingTex);
   pongTex = createTexture(w,h); pongFBO = createFBO(pongTex);
   edgeTex = createTexture(w,1);
+  effectTex = createTexture(w,h); effectFBO = createFBO(effectTex);
+  pixelSortTex = createTexture(w,h);
 }
 
 function uploadRaster(){
@@ -495,17 +611,16 @@ function computeColumnEdges(){
    RASTERIZAÇÃO DE TEXTO
 --------------------------------------------------------------------- */
 
-function rasterizeSimple(){
-  const c = rasterCanvas;
-  c.width = RENDER_W; c.height = RENDER_H;
-  const ctx = c.getContext("2d");
-  ctx.clearRect(0,0,RENDER_W,RENDER_H);
+// calcula tamanho de fonte + posições pra caber o texto (multi-linha,
+// centrado) na largura/altura do canvas — compartilhado entre a
+// rasterização normal (branco sobre transparente) e a do pixel sort
+// (que precisa das cores reais já compostas).
+function computeTextLayout(ctx){
   const lines = state.text.split("\n").filter(l=>l.length>0);
-  if (lines.length===0) return;
+  if (lines.length===0) return null;
 
   const marginX = RENDER_W*0.06;
   const maxW = RENDER_W - marginX*2;
-  let fontSize = RENDER_H*0.5;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -515,26 +630,102 @@ function rasterizeSimple(){
     for (const l of lines) w = Math.max(w, ctx.measureText(l).width);
     return w;
   }
-  // ajusta o tamanho pra caber na largura
   let lo=4, hi=RENDER_H*1.5;
   for (let iter=0; iter<20; iter++){
     const mid=(lo+hi)/2;
     if (widest(mid) > maxW) hi=mid; else lo=mid;
   }
-  fontSize = lo;
-  // também limita pela altura total do bloco de linhas
-  const lineHeight = fontSize*1.02;
-  const totalH = lineHeight*lines.length;
+  let fontSize = lo;
+  const lineHeight0 = fontSize*1.02;
+  const totalH0 = lineHeight0*lines.length;
   const maxH = RENDER_H*0.86;
-  if (totalH > maxH) fontSize *= maxH/totalH;
+  if (totalH0 > maxH) fontSize *= maxH/totalH0;
 
   ctx.font = `${FONT_WEIGHT} ${fontSize}px "${FONT}"`;
-  const lh = fontSize*1.02;
-  const startY = RENDER_H/2 - (lh*(lines.length-1))/2;
+  const lineHeight = fontSize*1.02;
+  const startY = RENDER_H/2 - (lineHeight*(lines.length-1))/2;
+  return { lines, fontSize, lineHeight, startY };
+}
+
+function rasterizeSimple(){
+  const c = rasterCanvas;
+  c.width = RENDER_W; c.height = RENDER_H;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0,0,RENDER_W,RENDER_H);
+  const layout = computeTextLayout(ctx);
+  if (!layout) return;
   ctx.fillStyle = "#fff";
-  lines.forEach((l,i)=>{
-    ctx.fillText(l, RENDER_W/2, startY + i*lh);
+  layout.lines.forEach((l,i)=>{
+    ctx.fillText(l, RENDER_W/2, layout.startY + i*layout.lineHeight);
   });
+}
+
+// modo Pixel Sort: desenha com as cores reais (tinta sobre fundo) e
+// ordena os pixels de cada linha/coluna por luminância dentro de trechos
+// acima de um limiar — técnica clássica de "databending" glitch.
+function computeSortedPixelTexture(){
+  const w = RENDER_W, h = RENDER_H;
+  const work = document.createElement("canvas");
+  work.width = w; work.height = h;
+  const ctx = work.getContext("2d");
+  ctx.fillStyle = state.bg;
+  ctx.fillRect(0,0,w,h);
+  const layout = computeTextLayout(ctx);
+  if (layout){
+    ctx.fillStyle = state.ink;
+    layout.lines.forEach((l,i)=>{
+      ctx.fillText(l, w/2, layout.startY + i*layout.lineHeight);
+    });
+  }
+
+  const imgData = ctx.getImageData(0,0,w,h);
+  const data = imgData.data;
+  const threshold = state.pixelsort.threshold/100*255;
+  const chance = state.pixelsort.chance;
+  const reverse = state.pixelsort.reverse;
+  const horizontal = state.pixelsort.direction === "horizontal";
+
+  function lumAt(idx){ return 0.299*data[idx]+0.587*data[idx+1]+0.114*data[idx+2]; }
+  function sortRun(getIdx, len){
+    let p = 0;
+    while (p < len){
+      if (lumAt(getIdx(p)) < threshold){ p++; continue; }
+      let start = p;
+      while (p < len && lumAt(getIdx(p)) >= threshold) p++;
+      const end = p;
+      if (end-start > 1){
+        const slice = [];
+        for (let k=start;k<end;k++){
+          const idx = getIdx(k);
+          slice.push([data[idx],data[idx+1],data[idx+2],data[idx+3]]);
+        }
+        slice.sort((a,b)=>(0.299*a[0]+0.587*a[1]+0.114*a[2])-(0.299*b[0]+0.587*b[1]+0.114*b[2]));
+        if (reverse) slice.reverse();
+        for (let k=0;k<slice.length;k++){
+          const idx = getIdx(start+k);
+          data[idx]=slice[k][0]; data[idx+1]=slice[k][1]; data[idx+2]=slice[k][2]; data[idx+3]=slice[k][3];
+        }
+      }
+    }
+  }
+
+  if (horizontal){
+    for (let y=0;y<h;y++){
+      if (Math.random()*100 > chance) continue;
+      sortRun((x)=> (y*w+x)*4, w);
+    }
+  } else {
+    for (let x=0;x<w;x++){
+      if (Math.random()*100 > chance) continue;
+      sortRun((y)=> (y*w+x)*4, h);
+    }
+  }
+
+  ctx.putImageData(imgData,0,0);
+  gl.bindTexture(gl.TEXTURE_2D, pixelSortTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, work);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
 }
 
 function rasterizeDenseBlock(){
@@ -607,6 +798,7 @@ function rasterize(){
   else rasterizeSimple();
   uploadRaster();
   if (state.mode === "melt") computeColumnEdges();
+  if (state.mode === "pixelsort") computeSortedPixelTexture();
 }
 
 /* ---------------------------------------------------------------------
@@ -642,19 +834,23 @@ function blurPass(srcTex, dstFBO, radiusPx){
   drawQuad();
 }
 
-function render(){
+function renderEffect(){
   const ink = hexToRgb(state.ink);
   const bg = hexToRgb(state.bg);
 
-  if (state.mode === "block"){
-    gl.useProgram(passProg);
-    bindQuad(passProg);
+  if (state.mode === "block" || state.mode === "pixelsort"){
+    const srcTex = state.mode === "pixelsort" ? pixelSortTex : textTex;
+    const prog = state.mode === "pixelsort" ? directProg : passProg;
+    gl.useProgram(prog);
+    bindQuad(prog);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, textTex);
-    gl.uniform1i(gl.getUniformLocation(passProg,"uTex"), 0);
-    gl.uniform3f(gl.getUniformLocation(passProg,"uInk"), ink[0],ink[1],ink[2]);
-    gl.uniform3f(gl.getUniformLocation(passProg,"uBg"), bg[0],bg[1],bg[2]);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, srcTex);
+    gl.uniform1i(gl.getUniformLocation(prog,"uTex"), 0);
+    if (state.mode === "block"){
+      gl.uniform3f(gl.getUniformLocation(prog,"uInk"), ink[0],ink[1],ink[2]);
+      gl.uniform3f(gl.getUniformLocation(prog,"uBg"), bg[0],bg[1],bg[2]);
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
     drawQuad();
     return;
@@ -677,7 +873,7 @@ function render(){
     gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uInk"), ink[0],ink[1],ink[2]);
     gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uBg"), bg[0],bg[1],bg[2]);
     gl.uniform2f(gl.getUniformLocation(blurDitherProg,"uResolution"), RENDER_W, RENDER_H);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
     drawQuad();
     return;
@@ -699,7 +895,7 @@ function render(){
     gl.uniform3f(gl.getUniformLocation(meltProg,"uInk"), ink[0],ink[1],ink[2]);
     gl.uniform3f(gl.getUniformLocation(meltProg,"uBg"), bg[0],bg[1],bg[2]);
     gl.uniform2f(gl.getUniformLocation(meltProg,"uResolution"), RENDER_W, RENDER_H);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
     drawQuad();
     return;
@@ -711,18 +907,78 @@ function render(){
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, textTex);
     gl.uniform1i(gl.getUniformLocation(degradeProg,"uTex"), 0);
-    gl.uniform1f(gl.getUniformLocation(degradeProg,"uHalftone"), state.degrade.halftone/100);
     gl.uniform1f(gl.getUniformLocation(degradeProg,"uGlitch"), state.degrade.glitch/100);
     gl.uniform1f(gl.getUniformLocation(degradeProg,"uDropout"), state.degrade.dropout/100);
     gl.uniform1f(gl.getUniformLocation(degradeProg,"uContrast"), state.degrade.contrast/100);
     gl.uniform3f(gl.getUniformLocation(degradeProg,"uInk"), ink[0],ink[1],ink[2]);
     gl.uniform3f(gl.getUniformLocation(degradeProg,"uBg"), bg[0],bg[1],bg[2]);
     gl.uniform2f(gl.getUniformLocation(degradeProg,"uResolution"), RENDER_W, RENDER_H);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
     drawQuad();
     return;
   }
+
+  if (state.mode === "halftone"){
+    gl.useProgram(halftoneProg);
+    bindQuad(halftoneProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, textTex);
+    gl.uniform1i(gl.getUniformLocation(halftoneProg,"uTex"), 0);
+    const shapeIdx = {circle:0, line:1, square:2}[state.halftone.shape] ?? 0;
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uShape"), shapeIdx);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uDotScale"), state.halftone.scale);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uSpacing"), 4+state.halftone.spacing/100*36);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uAngleDeg"), state.halftone.angle);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uInvert"), state.halftone.invert?1:0);
+    gl.uniform3f(gl.getUniformLocation(halftoneProg,"uInk"), ink[0],ink[1],ink[2]);
+    gl.uniform3f(gl.getUniformLocation(halftoneProg,"uBg"), bg[0],bg[1],bg[2]);
+    gl.uniform2f(gl.getUniformLocation(halftoneProg,"uResolution"), RENDER_W, RENDER_H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
+    gl.viewport(0,0,RENDER_W,RENDER_H);
+    drawQuad();
+    return;
+  }
+
+  if (state.mode === "crosshatch"){
+    const radiusPx = Math.max(1, state.crosshatch.softness/100 * RENDER_H*0.02);
+    blurPass(textTex, blurredFBO, radiusPx);
+
+    gl.useProgram(crosshatchProg);
+    bindQuad(crosshatchProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, blurredTex);
+    gl.uniform1i(gl.getUniformLocation(crosshatchProg,"uTex"), 0);
+    gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uScale"), 6+state.crosshatch.scale/100*40);
+    gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uThickness"), state.crosshatch.thickness);
+    gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uAngleDeg"), state.crosshatch.angle);
+    gl.uniform3f(gl.getUniformLocation(crosshatchProg,"uInk"), ink[0],ink[1],ink[2]);
+    gl.uniform3f(gl.getUniformLocation(crosshatchProg,"uBg"), bg[0],bg[1],bg[2]);
+    gl.uniform2f(gl.getUniformLocation(crosshatchProg,"uResolution"), RENDER_W, RENDER_H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
+    gl.viewport(0,0,RENDER_W,RENDER_H);
+    drawQuad();
+    return;
+  }
+}
+
+function applyAdjustments(){
+  gl.useProgram(adjustProg);
+  bindQuad(adjustProg);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, effectTex);
+  gl.uniform1i(gl.getUniformLocation(adjustProg,"uTex"), 0);
+  gl.uniform1f(gl.getUniformLocation(adjustProg,"uBrightness"), state.adjust.brightness/100);
+  gl.uniform1f(gl.getUniformLocation(adjustProg,"uContrast"), state.adjust.contrast/100);
+  gl.uniform1f(gl.getUniformLocation(adjustProg,"uGamma"), Math.max(0.2, state.adjust.gamma/100));
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0,0,RENDER_W,RENDER_H);
+  drawQuad();
+}
+
+function render(){
+  renderEffect();
+  applyAdjustments();
 }
 
 function fullUpdate(){
@@ -786,8 +1042,27 @@ textInput.addEventListener("input", ()=>{
   requestFullUpdate();
 });
 
-document.getElementById("inkColor").addEventListener("input", (e)=>{ state.ink=e.target.value; requestRender(); });
-document.getElementById("bgColor").addEventListener("input", (e)=>{ state.bg=e.target.value; requestRender(); });
+function colorChanged(){
+  // pixel sort compõe a cor já na rasterização (CPU), então precisa de
+  // um full update; os outros modos só recolorem no shader (render basta).
+  if (state.mode === "pixelsort") requestFullUpdate();
+  else requestRender();
+}
+document.getElementById("inkColor").addEventListener("input", (e)=>{ state.ink=e.target.value; colorChanged(); });
+document.getElementById("bgColor").addEventListener("input", (e)=>{ state.bg=e.target.value; colorChanged(); });
+
+function bindAdjustSlider(id, key){
+  const el = document.getElementById(id);
+  const val = document.getElementById(id+"Val");
+  el.addEventListener("input", ()=>{
+    state.adjust[key] = +el.value;
+    val.textContent = el.value;
+    requestRender();
+  });
+}
+bindAdjustSlider("adjBrightness","brightness");
+bindAdjustSlider("adjContrast","contrast");
+bindAdjustSlider("adjGamma","gamma");
 
 document.querySelectorAll(".modebtns button").forEach(btn=>{
   btn.addEventListener("click", ()=>{
@@ -836,7 +1111,6 @@ function renderModeParams(){
   } else if (state.mode==="degrade"){
     h.textContent = "Degradação";
     panel.appendChild(h);
-    sliderRow(panel,"Halftone", ()=>state.degrade.halftone, v=>state.degrade.halftone=v);
     sliderRow(panel,"Glitch (faixas)", ()=>state.degrade.glitch, v=>state.degrade.glitch=v);
     sliderRow(panel,"Falha de tinta", ()=>state.degrade.dropout, v=>state.degrade.dropout=v);
     sliderRow(panel,"Contraste", ()=>state.degrade.contrast, v=>state.degrade.contrast=v);
@@ -851,16 +1125,79 @@ function renderModeParams(){
     cb.addEventListener("change", ()=>{ state.block.removeSpaces=cb.checked; requestFullUpdate(); });
     chk.appendChild(cb); chk.appendChild(cl);
     panel.appendChild(chk);
+  } else if (state.mode==="halftone"){
+    h.textContent = "Halftone";
+    panel.appendChild(h);
+    selectRow(panel,"Forma", ()=>state.halftone.shape, v=>state.halftone.shape=v, [
+      {value:"circle", label:"Círculo"},
+      {value:"line", label:"Linha"},
+      {value:"square", label:"Quadrado"},
+    ]);
+    sliderRow(panel,"Escala do ponto", ()=>state.halftone.scale, v=>state.halftone.scale=v);
+    sliderRow(panel,"Espaçamento", ()=>state.halftone.spacing, v=>state.halftone.spacing=v);
+    sliderRow(panel,"Ângulo", ()=>state.halftone.angle, v=>state.halftone.angle=v, 0, 90, "°");
+    const chk = document.createElement("div"); chk.className="check";
+    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=state.halftone.invert; cb.id="haltInvert";
+    const cl = document.createElement("label"); cl.htmlFor="haltInvert"; cl.textContent="Inverter";
+    cb.addEventListener("change", ()=>{ state.halftone.invert=cb.checked; requestRender(); });
+    chk.appendChild(cb); chk.appendChild(cl);
+    panel.appendChild(chk);
+  } else if (state.mode==="pixelsort"){
+    h.textContent = "Pixel Sort";
+    panel.appendChild(h);
+    selectRow(panel,"Direção", ()=>state.pixelsort.direction, v=>{state.pixelsort.direction=v; requestFullUpdate();}, [
+      {value:"horizontal", label:"Horizontal"},
+      {value:"vertical", label:"Vertical"},
+    ]);
+    sliderRow(panel,"Limiar", ()=>state.pixelsort.threshold, v=>{state.pixelsort.threshold=v; requestFullUpdate();});
+    sliderRow(panel,"% de linhas afetadas", ()=>state.pixelsort.chance, v=>{state.pixelsort.chance=v; requestFullUpdate();});
+    const chk = document.createElement("div"); chk.className="check";
+    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=state.pixelsort.reverse; cb.id="sortReverse";
+    const cl = document.createElement("label"); cl.htmlFor="sortReverse"; cl.textContent="Inverter ordem";
+    cb.addEventListener("change", ()=>{ state.pixelsort.reverse=cb.checked; requestFullUpdate(); });
+    chk.appendChild(cb); chk.appendChild(cl);
+    panel.appendChild(chk);
+    const btnrow = document.createElement("div"); btnrow.className="btnrow";
+    const regen = document.createElement("button"); regen.className="ghost"; regen.style.flex="1";
+    regen.textContent = "Nova variação";
+    regen.addEventListener("click", requestFullUpdate);
+    btnrow.appendChild(regen);
+    panel.appendChild(btnrow);
+  } else if (state.mode==="crosshatch"){
+    h.textContent = "Crosshatch";
+    panel.appendChild(h);
+    sliderRow(panel,"Escala da hachura", ()=>state.crosshatch.scale, v=>state.crosshatch.scale=v);
+    sliderRow(panel,"Espessura da linha", ()=>state.crosshatch.thickness, v=>state.crosshatch.thickness=v);
+    sliderRow(panel,"Ângulo", ()=>state.crosshatch.angle, v=>state.crosshatch.angle=v, 0, 90, "°");
+    sliderRow(panel,"Suavização", ()=>state.crosshatch.softness, v=>state.crosshatch.softness=v);
   }
   c.appendChild(panel);
 }
 
-document.getElementById("exportBtn").addEventListener("click", async ()=>{
+function selectRow(container, label, get, set, options){
+  const row = document.createElement("div"); row.className="row";
+  const lbl = document.createElement("label"); lbl.textContent=label;
+  const sel = document.createElement("select");
+  options.forEach(o=>{
+    const opt = document.createElement("option");
+    opt.value=o.value; opt.textContent=o.label;
+    if (o.value===get()) opt.selected=true;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener("change", ()=>{ set(sel.value); requestRender(); });
+  row.appendChild(lbl); row.appendChild(sel);
+  container.appendChild(row);
+}
+
+document.getElementById("exportBtn").addEventListener("click", ()=>{
+  // sem esperar requestAnimationFrame aqui: os comandos WebGL abaixo já
+  // são enfileirados de forma síncrona, e um rAF pendente pode nunca
+  // disparar se a aba estiver em segundo plano (ex: usuário trocou de
+  // aba logo depois de clicar exportar), travando a exportação.
   const scale = +document.getElementById("exportScale").value;
   const targetLongEdge = Math.round(PREVIEW_LONG_EDGE*scale);
   setResolution(targetLongEdge);
   rasterize();
-  await new Promise(r=>requestAnimationFrame(r));
   render();
   canvas.toBlob((blob)=>{
     const a = document.createElement("a");
