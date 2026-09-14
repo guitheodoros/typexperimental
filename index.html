@@ -83,6 +83,13 @@
   button.ghost{ background:transparent; color:var(--ink); }
   button.ghost:hover{ background:var(--ink); color:#fff; }
   .btnrow{ display:flex; gap:6px; margin-top:8px; }
+  .filebtn{ display:block; cursor:pointer; }
+  .filebtn .fakebtn{
+    display:block; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+    background:transparent; color:var(--ink); border:1px solid var(--ink); padding:7px 10px;
+  }
+  .filebtn:hover .fakebtn{ background:var(--ink); color:#fff; }
+  .fontname{ font-size:10px; color:var(--muted); margin:-4px 0 8px; }
   .modebtns{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
   .modebtns button{ padding:9px 6px; font-size:10px; }
   .modebtns button.active{ background:var(--accent); border-color:var(--accent); }
@@ -117,6 +124,50 @@
     <div class="panel">
       <h2>Texto</h2>
       <textarea id="textInput">MOVING\nIN</textarea>
+    </div>
+
+    <div class="panel">
+      <h2>Fonte</h2>
+      <div class="row">
+        <label for="fontFamily">Família</label>
+        <select id="fontFamily"></select>
+      </div>
+      <div class="btnrow">
+        <label class="filebtn" style="flex:1">
+          <input type="file" id="fontUpload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
+          <span class="fakebtn">Carregar fonte (TTF/OTF/WOFF)</span>
+        </label>
+      </div>
+      <div class="row">
+        <label for="fontSize">Tamanho</label>
+        <input type="range" id="fontSize" autocomplete="off" min="30" max="150" value="100">
+        <span class="val" id="fontSizeVal">100%</span>
+      </div>
+      <div class="row">
+        <label for="fontLeading">Entrelinha</label>
+        <input type="range" id="fontLeading" autocomplete="off" min="50" max="200" value="100">
+        <span class="val" id="fontLeadingVal">100%</span>
+      </div>
+      <div class="row">
+        <label for="fontWidth">Largura do texto</label>
+        <input type="range" id="fontWidth" autocomplete="off" min="30" max="200" value="100">
+        <span class="val" id="fontWidthVal">100%</span>
+      </div>
+      <div class="row">
+        <label for="fontHeight">Altura do texto</label>
+        <input type="range" id="fontHeight" autocomplete="off" min="30" max="200" value="100">
+        <span class="val" id="fontHeightVal">100%</span>
+      </div>
+      <div class="row">
+        <label for="fontKerning">Kerning</label>
+        <input type="range" id="fontKerning" autocomplete="off" min="-20" max="100" value="0">
+        <span class="val" id="fontKerningVal">0%</span>
+      </div>
+      <div class="row">
+        <label for="fontBlur">Blur prévio</label>
+        <input type="range" id="fontBlur" autocomplete="off" min="0" max="100" value="0">
+        <span class="val" id="fontBlurVal">0%</span>
+      </div>
     </div>
 
     <div class="panel">
@@ -188,8 +239,31 @@
 <script>
 "use strict";
 
-const FONT = "Archivo";
-const FONT_WEIGHT = 900;
+const FONT_FAMILIES = [
+  { value:"archivo",   label:"Archivo Black", css:'"Archivo"',                    weight:900 },
+  { value:"system",    label:"Sistema",       css:"system-ui, sans-serif",        weight:900 },
+  { value:"arial",     label:"Arial",         css:"Arial, sans-serif",            weight:900 },
+  { value:"helvetica", label:"Helvetica",     css:"Helvetica, Arial, sans-serif", weight:900 },
+  { value:"impact",    label:"Impact",        css:"Impact, sans-serif",           weight:400 },
+  { value:"arialblack",label:"Arial Black",   css:'"Arial Black", sans-serif',    weight:900 },
+  { value:"futura",    label:"Futura",        css:"Futura, sans-serif",           weight:700 },
+  { value:"gillsans",  label:"Gill Sans",     css:'"Gill Sans", sans-serif',      weight:700 },
+  { value:"trebuchet", label:"Trebuchet MS",  css:'"Trebuchet MS", sans-serif',   weight:900 },
+  { value:"verdana",   label:"Verdana",       css:"Verdana, sans-serif",          weight:900 },
+  { value:"georgia",   label:"Georgia",       css:"Georgia, serif",               weight:700 },
+  { value:"times",     label:"Times New Roman", css:'"Times New Roman", serif',   weight:700 },
+  { value:"courier",   label:"Courier New",   css:'"Courier New", monospace',     weight:700 },
+  { value:"mono",      label:"Monoespaçada",  css:"monospace",                    weight:700 },
+];
+let customFontFamily = null; // preenchido se o usuário fizer upload de uma fonte
+
+function fontCss(px){
+  if (state.font.family === "custom" && customFontFamily){
+    return `${customFontFamily.weight} ${px}px ${customFontFamily.css}`;
+  }
+  const f = FONT_FAMILIES.find(f=>f.value===state.font.family) || FONT_FAMILIES[0];
+  return `${f.weight} ${px}px ${f.css}`;
+}
 
 const FORMATS = [
   { key:"3x4", label:"Retrato 3:4", ratio: 3/4 },
@@ -222,6 +296,7 @@ const state = {
   pixelsort: { threshold: 50, direction: "horizontal", chance: 75, reverse: false },
   crosshatch: { scale: 45, thickness: 30, angle: 45, softness: 25 },
   adjust: { brightness: 0, contrast: 0, gamma: 100 },
+  font: { family: "archivo", size: 100, leading: 100, width: 100, height: 100, kerning: 0, blur: 0 },
 };
 
 let RENDER_W = 0, RENDER_H = 0;
@@ -700,13 +775,15 @@ function computeTextLayout(ctx){
   const lines = state.text.split("\n").filter(l=>l.length>0);
   if (lines.length===0) return null;
 
+  const widthPct = Math.max(0.1, state.font.width/100);
+  const heightPct = Math.max(0.1, state.font.height/100);
   const marginX = RENDER_W*0.06;
-  const maxW = RENDER_W - marginX*2;
+  const maxW = (RENDER_W - marginX*2) / widthPct;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
   function widest(size){
-    ctx.font = `${FONT_WEIGHT} ${size}px "${FONT}"`;
+    ctx.font = fontCss(size);
     let w = 0;
     for (const l of lines) w = Math.max(w, ctx.measureText(l).width);
     return w;
@@ -716,16 +793,18 @@ function computeTextLayout(ctx){
     const mid=(lo+hi)/2;
     if (widest(mid) > maxW) hi=mid; else lo=mid;
   }
-  let fontSize = lo;
-  const lineHeight0 = fontSize*1.02;
+  let fontSize = lo * Math.max(0.1, state.font.size/100);
+  const leadingMul = Math.max(0.4, state.font.leading/100) * 1.02;
+  const lineHeight0 = fontSize*leadingMul;
   const totalH0 = lineHeight0*lines.length;
-  const maxH = RENDER_H*0.86;
+  const maxH = (RENDER_H*0.86) / heightPct;
   if (totalH0 > maxH) fontSize *= maxH/totalH0;
 
-  ctx.font = `${FONT_WEIGHT} ${fontSize}px "${FONT}"`;
-  const lineHeight = fontSize*1.02;
+  ctx.font = fontCss(fontSize);
+  try { ctx.letterSpacing = `${(state.font.kerning/100)*fontSize*0.3}px`; } catch(e){}
+  const lineHeight = fontSize*leadingMul;
   const startY = RENDER_H/2 - (lineHeight*(lines.length-1))/2;
-  return { lines, fontSize, lineHeight, startY };
+  return { lines, fontSize, lineHeight, startY, widthPct, heightPct };
 }
 
 function rasterizeSimple(){
@@ -737,7 +816,12 @@ function rasterizeSimple(){
   if (!layout) return;
   ctx.fillStyle = "#fff";
   layout.lines.forEach((l,i)=>{
-    ctx.fillText(l, RENDER_W/2, layout.startY + i*layout.lineHeight);
+    const y = layout.startY + i*layout.lineHeight;
+    ctx.save();
+    ctx.translate(RENDER_W/2, y);
+    ctx.scale(layout.widthPct, layout.heightPct);
+    ctx.fillText(l, 0, 0);
+    ctx.restore();
   });
 }
 
@@ -755,7 +839,12 @@ function computeSortedPixelTexture(){
   if (layout){
     ctx.fillStyle = state.ink;
     layout.lines.forEach((l,i)=>{
-      ctx.fillText(l, w/2, layout.startY + i*layout.lineHeight);
+      const y = layout.startY + i*layout.lineHeight;
+      ctx.save();
+      ctx.translate(w/2, y);
+      ctx.scale(layout.widthPct, layout.heightPct);
+      ctx.fillText(l, 0, 0);
+      ctx.restore();
     });
   }
 
@@ -824,7 +913,7 @@ function rasterizeDenseBlock(){
   const marginY = RENDER_H*0.05;
   const targetW = RENDER_W - marginX*2;
   const fontSize = Math.max(6, state.block.size/100 * RENDER_H*0.08);
-  ctx.font = `${FONT_WEIGHT} ${fontSize}px "${FONT}"`;
+  ctx.font = fontCss(fontSize);
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   const spacing = state.block.spacing/100 * fontSize*0.3;
@@ -874,9 +963,26 @@ function rasterizeDenseBlock(){
   });
 }
 
+// desfoca o texto ANTES de qualquer efeito de modo — feito no canvas 2D
+// (não na GPU) pra ficar automaticamente consistente com tudo que lê
+// rasterCanvas diretamente, como a análise de coluna do modo Derreter.
+function applyPreBlur(){
+  const blurPx = state.font.blur/100 * RENDER_H*0.025;
+  if (blurPx < 0.3) return;
+  const tmp = document.createElement("canvas");
+  tmp.width = rasterCanvas.width; tmp.height = rasterCanvas.height;
+  const tctx = tmp.getContext("2d");
+  tctx.filter = `blur(${blurPx}px)`;
+  tctx.drawImage(rasterCanvas, 0, 0);
+  const ctx = rasterCanvas.getContext("2d");
+  ctx.clearRect(0,0,rasterCanvas.width,rasterCanvas.height);
+  ctx.drawImage(tmp, 0, 0);
+}
+
 function rasterize(){
   if (state.mode === "block") rasterizeDenseBlock();
   else rasterizeSimple();
+  if (state.mode !== "pixelsort") applyPreBlur();
   uploadRaster();
   if (state.mode === "melt") computeColumnEdges();
   if (state.mode === "pixelsort") computeSortedPixelTexture();
@@ -1142,6 +1248,61 @@ textInput.addEventListener("input", ()=>{
   requestFullUpdate();
 });
 
+const fontFamilySel = document.getElementById("fontFamily");
+function buildFontFamilyOptions(){
+  fontFamilySel.innerHTML = "";
+  FONT_FAMILIES.forEach(f=>{
+    const o = document.createElement("option");
+    o.value=f.value; o.textContent=f.label;
+    fontFamilySel.appendChild(o);
+  });
+  if (customFontFamily){
+    const o = document.createElement("option");
+    o.value = "custom"; o.textContent = customFontFamily.label + " (carregada)";
+    fontFamilySel.appendChild(o);
+  }
+  fontFamilySel.value = state.font.family;
+}
+buildFontFamilyOptions();
+fontFamilySel.addEventListener("change", ()=>{
+  state.font.family = fontFamilySel.value;
+  requestFullUpdate();
+});
+
+document.getElementById("fontUpload").addEventListener("change", async (e)=>{
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const buf = await file.arrayBuffer();
+    const face = new FontFace("TypeFXCustomFont", buf);
+    await face.load();
+    document.fonts.add(face);
+    customFontFamily = { label: file.name.replace(/\.[^.]+$/,""), css:'"TypeFXCustomFont"', weight:400 };
+    state.font.family = "custom";
+    buildFontFamilyOptions();
+    requestFullUpdate();
+  } catch(err){
+    console.error("Falha ao carregar fonte", err);
+    alert("Não foi possível carregar essa fonte. Verifique se o arquivo é um TTF/OTF/WOFF/WOFF2 válido.");
+  }
+});
+
+function bindFontSlider(id, key, suffix="%"){
+  const el = document.getElementById(id);
+  const val = document.getElementById(id+"Val");
+  el.addEventListener("input", ()=>{
+    state.font[key] = +el.value;
+    val.textContent = el.value+suffix;
+    requestFullUpdate();
+  });
+}
+bindFontSlider("fontSize","size");
+bindFontSlider("fontLeading","leading");
+bindFontSlider("fontWidth","width");
+bindFontSlider("fontHeight","height");
+bindFontSlider("fontKerning","kerning");
+bindFontSlider("fontBlur","blur");
+
 function colorChanged(){
   // pixel sort compõe a cor já na rasterização (CPU), então precisa de
   // um full update; os outros modos só recolorem no shader (render basta).
@@ -1362,7 +1523,7 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
 --------------------------------------------------------------------- */
 
 async function init(){
-  await document.fonts.load(`900 100px "${FONT}"`).catch(()=>{});
+  await document.fonts.load(`900 100px "Archivo"`).catch(()=>{});
   await document.fonts.ready;
   formatSel.value = state.format.key;
   setResolution(PREVIEW_LONG_EDGE);
