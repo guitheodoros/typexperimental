@@ -207,6 +207,11 @@
         <label for="formatSel">Proporção</label>
         <select id="formatSel"></select>
       </div>
+      <div class="row">
+        <label for="zoomSlider">Zoom</label>
+        <input type="range" id="zoomSlider" autocomplete="off" min="50" max="300" value="100">
+        <span class="val" id="zoomSliderVal">100%</span>
+      </div>
     </div>
 
     <div id="modeParams"></div>
@@ -280,6 +285,7 @@ const state = {
   ink: "#111111",
   bg: "#f2f0ea",
   format: FORMATS[0],
+  zoom: 100,
   seed: 7.3,
   blur: { amount: 45, dither: 55, grain: 30 },
   melt: { amount: 45, scale: 35, drip: 55 },
@@ -514,7 +520,7 @@ uniform float uMaxDot;
 uniform float uCornerRadius;
 uniform float uSpacing;
 uniform float uAngleDeg;
-uniform float uGridType; // 0=regular 1=benday (linhas ímpares deslocadas meia célula)
+uniform float uGridType; // 0=regular 1=benday (linhas ímpares deslocadas meia célula) 2=hex
 uniform float uNoiseAmt; // jitter de posição por célula, em px
 uniform float uInvert;
 uniform vec3 uInk;
@@ -580,17 +586,21 @@ void main(){
     if (extreme > uMergeThreshold) cellSize = blockSize;
   }
 
-  float row = floor(rp.y/cellSize);
+  // grade hex: linhas mais compactas verticalmente (empacotamento
+  // hexagonal real, não só quadrados deslocados) — mesma lógica de
+  // deslocar linhas ímpares que o benday usa, só com outra altura de linha.
+  float rowH = (uGridType > 1.5) ? cellSize*0.866 : cellSize;
+  float row = floor(rp.y/rowH);
   bool shifted = uGridType > 0.5 && mod(row, 2.0) > 0.5;
   vec2 rp2 = rp;
   if (shifted) rp2.x += cellSize*0.5;
 
-  vec2 cellIndex = floor(rp2/cellSize);
-  vec2 cellCenter = (cellIndex+0.5)*cellSize;
+  vec2 cellIndex = vec2(floor(rp2.x/cellSize), row);
+  vec2 cellCenter = vec2((cellIndex.x+0.5)*cellSize, (row+0.5)*rowH);
   vec2 jitter = (vec2(hash(cellIndex), hash(cellIndex+vec2(9.7,3.1)))-0.5) * uNoiseAmt;
   vec2 sampleCenter = cellCenter + jitter;
 
-  // desfaz o deslocamento benday antes de amostrar a cobertura de tinta
+  // desfaz o deslocamento benday/hex antes de amostrar a cobertura de tinta
   vec2 sampleRp = sampleCenter;
   if (shifted) sampleRp.x -= cellSize*0.5;
   vec2 sampleUv = clamp((invRot*sampleRp)/uResolution, 0.0, 1.0);
@@ -665,8 +675,12 @@ uniform sampler2D uTex;
 uniform float uBrightness;
 uniform float uContrast;
 uniform float uGamma;
+uniform float uZoom;
+uniform vec3 uBg;
 void main(){
-  vec3 col = texture(uTex, vUv).rgb;
+  vec2 zUv = (vUv-0.5)/max(uZoom,0.01) + 0.5;
+  bool outside = zUv.x<0.0 || zUv.x>1.0 || zUv.y<0.0 || zUv.y>1.0;
+  vec3 col = outside ? uBg : texture(uTex, clamp(zUv,0.0,1.0)).rgb;
   col = (col-0.5)*(1.0+uContrast) + 0.5 + uBrightness;
   col = clamp(col, 0.0, 1.0);
   col = pow(col, vec3(1.0/uGamma));
@@ -1120,7 +1134,7 @@ function renderEffect(){
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uCornerRadius"), state.halftone.cornerRadius/100*30*s);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uSpacing"), (4+state.halftone.spacing/100*36)*s);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uAngleDeg"), state.halftone.angle);
-    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uGridType"), state.halftone.gridType==="benday"?1:0);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uGridType"), {regular:0, benday:1, hex:2}[state.halftone.gridType] ?? 0);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uNoiseAmt"), state.halftone.noise/100*20*s);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uInvert"), state.halftone.invert?1:0);
     gl.uniform3f(gl.getUniformLocation(halftoneProg,"uInk"), ink[0],ink[1],ink[2]);
@@ -1177,6 +1191,9 @@ function applyAdjustments(){
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uBrightness"), state.adjust.brightness/100);
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uContrast"), state.adjust.contrast/100);
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uGamma"), Math.max(0.2, state.adjust.gamma/100));
+  gl.uniform1f(gl.getUniformLocation(adjustProg,"uZoom"), state.zoom/100);
+  const bg = hexToRgb(state.bg);
+  gl.uniform3f(gl.getUniformLocation(adjustProg,"uBg"), bg[0],bg[1],bg[2]);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0,0,RENDER_W,RENDER_H);
   drawQuad();
@@ -1239,6 +1256,14 @@ formatSel.addEventListener("change", ()=>{
   state.format = FORMATS.find(f=>f.key===formatSel.value);
   setResolution(PREVIEW_LONG_EDGE);
   requestFullUpdate();
+});
+
+const zoomSlider = document.getElementById("zoomSlider");
+const zoomSliderVal = document.getElementById("zoomSliderVal");
+zoomSlider.addEventListener("input", ()=>{
+  state.zoom = +zoomSlider.value;
+  zoomSliderVal.textContent = zoomSlider.value+"%";
+  requestRender();
 });
 
 const textInput = document.getElementById("textInput");
@@ -1392,6 +1417,7 @@ function renderModeParams(){
     selectRow(panel,"Grid", ()=>state.halftone.gridType, v=>state.halftone.gridType=v, [
       {value:"regular", label:"Regular"},
       {value:"benday", label:"Benday"},
+      {value:"hex", label:"Hex"},
     ]);
     sliderRow(panel,"Espaçamento", ()=>state.halftone.spacing, v=>state.halftone.spacing=v);
     sliderRow(panel,"Ponto mínimo", ()=>state.halftone.minDot, v=>state.halftone.minDot=v);
