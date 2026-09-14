@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Type FX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Archivo:wght@700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#e8e3d8;
+    --panel:#f5f2ea;
+    --ink:#111;
+    --border:#111;
+    --muted:#6b6558;
+    --accent:#b3281c;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Geist", sans-serif;
+    font-optical-sizing:auto;
+    font-weight:300;
+    font-style:normal;
+    background:var(--bg);
+    color:var(--ink);
+    padding:16px;
+  }
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:12px;
+    border-bottom:2px solid var(--ink);
+    padding-bottom:10px;
+  }
+  header h1{ font-size:18px; font-weight:600; margin:0; letter-spacing:1px; }
+  header p{ margin:2px 0 0; font-size:11px; color:var(--muted); }
+  header a{ font-size:11px; color:var(--muted); text-decoration:none; white-space:nowrap; }
+  header a:hover{ color:var(--ink); text-decoration:underline; }
+  .layout{ display:grid; grid-template-columns:300px 1fr; gap:16px; align-items:start; }
+  .canvas-wrap{
+    background:var(--panel);
+    border:2px solid var(--ink);
+    padding:10px;
+    position:sticky;
+    top:16px;
+    width:fit-content;
+    max-width:100%;
+    justify-self:start;
+  }
+  .canvas-wrap .titlebar{
+    display:flex; justify-content:space-between; font-size:11px;
+    margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;
+  }
+  #canvasHost{
+    position:relative; width:fit-content; max-width:100%; min-height:300px;
+    display:flex; align-items:center; justify-content:center; overflow:hidden;
+  }
+  #glcanvas{ max-width:100%; max-height:calc(100vh - 90px); display:block; }
+  .panel{ background:var(--panel); border:2px solid var(--ink); padding:12px; margin-bottom:12px; }
+  .panel h2{
+    font-size:11px; font-weight:600; margin:0 0 10px; text-transform:uppercase;
+    letter-spacing:1px; border-bottom:1px solid var(--ink); padding-bottom:6px;
+  }
+  .row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; }
+  .row label{ font-size:11px; color:var(--muted); flex:1; }
+  .row .val{ font-size:11px; min-width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+  input[type=range]{ flex:2; accent-color:var(--ink); }
+  select, input[type=color]{ font-family:inherit; font-size:11px; border:1px solid var(--ink); background:#fff; padding:4px 6px; flex:2; }
+  textarea{
+    width:100%; font-family:inherit; font-size:12px; border:1px solid var(--ink);
+    background:#fff; padding:6px; resize:vertical; min-height:70px;
+  }
+  .check{ display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+  .check label{ font-size:11px; color:var(--muted); }
+  button{
+    font-family:inherit; font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+    background:var(--ink); color:#fff; border:1px solid var(--ink); padding:7px 10px; cursor:pointer;
+  }
+  button:hover{ background:#333; }
+  button.ghost{ background:transparent; color:var(--ink); }
+  button.ghost:hover{ background:var(--ink); color:#fff; }
+  .btnrow{ display:flex; gap:6px; margin-top:8px; }
+  .modebtns{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .modebtns button{ padding:9px 6px; font-size:10px; }
+  .modebtns button.active{ background:var(--accent); border-color:var(--accent); }
+  footer{ margin-top:20px; font-size:10px; color:var(--muted); text-align:center; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>TYPE FX</h1>
+    <p>tipografia experimental — distorção, degradação e colapso do texto via WebGL</p>
+  </div>
+  <a href="https://theodoros.cc" target="_blank" rel="noopener">theodoros.cc</a>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+
+    <div class="panel">
+      <h2>Modo</h2>
+      <div class="modebtns">
+        <button data-mode="blur" class="active">Blur / Grão</button>
+        <button data-mode="melt">Derreter</button>
+        <button data-mode="degrade">Degradação</button>
+        <button data-mode="block">Bloco denso</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Texto</h2>
+      <textarea id="textInput">MOVING\nIN</textarea>
+    </div>
+
+    <div class="panel">
+      <h2>Cores</h2>
+      <div class="row">
+        <label for="inkColor">Tinta</label>
+        <input type="color" id="inkColor" value="#111111">
+      </div>
+      <div class="row">
+        <label for="bgColor">Fundo</label>
+        <input type="color" id="bgColor" value="#f2f0ea">
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Formato</h2>
+      <div class="row">
+        <label for="formatSel">Proporção</label>
+        <select id="formatSel"></select>
+      </div>
+    </div>
+
+    <div id="modeParams"></div>
+
+    <div class="panel">
+      <h2>Exportar</h2>
+      <div class="row">
+        <label for="exportScale">Resolução</label>
+        <select id="exportScale">
+          <option value="1.5">Média (~2100px)</option>
+          <option value="2" selected>Alta (~2800px)</option>
+          <option value="3">Máxima (~4200px)</option>
+        </select>
+      </div>
+      <div class="btnrow">
+        <button id="exportBtn" style="flex:1">Exportar PNG</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="canvas-wrap">
+    <div class="titlebar"><span>Preview</span><span id="resLabel"></span></div>
+    <div id="canvasHost"><canvas id="glcanvas"></canvas></div>
+  </div>
+</div>
+
+<footer>Type FX — ferramenta local, sem servidor. Nada é enviado para fora do seu navegador.</footer>
+
+<script>
+"use strict";
+
+const FONT = "Archivo";
+const FONT_WEIGHT = 900;
+
+const FORMATS = [
+  { key:"3x4", label:"Retrato 3:4", ratio: 3/4 },
+  { key:"2x3", label:"Retrato 2:3", ratio: 2/3 },
+  { key:"square", label:"Quadrado", ratio: 1 },
+  { key:"4x3", label:"Paisagem 4:3", ratio: 4/3 },
+];
+
+const PREVIEW_LONG_EDGE = 1400;
+
+const state = {
+  mode: "blur",
+  text: "MOVING\nIN",
+  ink: "#111111",
+  bg: "#f2f0ea",
+  format: FORMATS[0],
+  seed: 7.3,
+  blur: { amount: 45, dither: 55, grain: 30 },
+  melt: { amount: 45, scale: 35, drip: 55 },
+  degrade: { halftone: 45, glitch: 35, dropout: 30, contrast: 20 },
+  block: { size: 60, spacing: 0, removeSpaces: true },
+};
+
+let RENDER_W = 0, RENDER_H = 0;
+
+/* ---------------------------------------------------------------------
+   WEBGL SETUP
+--------------------------------------------------------------------- */
+
+const canvas = document.getElementById("glcanvas");
+const gl = canvas.getContext("webgl2", { preserveDrawingBuffer:true, alpha:false });
+if (!gl) alert("Seu navegador não suporta WebGL2, necessário para esta ferramenta.");
+
+function compileShader(src, type){
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src);
+  gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(sh));
+    throw new Error("Shader compile error: " + gl.getShaderInfoLog(sh));
+  }
+  return sh;
+}
+function linkProgram(vsSrc, fsSrc){
+  const vs = compileShader(vsSrc, gl.VERTEX_SHADER);
+  const fs = compileShader(fsSrc, gl.FRAGMENT_SHADER);
+  const p = gl.createProgram();
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)){
+    console.error(gl.getProgramInfoLog(p));
+    throw new Error("Program link error: " + gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+const VERT_QUAD = `#version 300 es
+in vec2 aPos;
+out vec2 vUv;
+void main(){
+  vUv = aPos*0.5+0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const NOISE_GLSL = `
+float hash(vec2 p){
+  return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123);
+}
+float noise(vec2 p){
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  float a = hash(i);
+  float b = hash(i+vec2(1.0,0.0));
+  float c = hash(i+vec2(0.0,1.0));
+  float d = hash(i+vec2(1.0,1.0));
+  vec2 u = f*f*(3.0-2.0*f);
+  return mix(a,b,u.x) + (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y;
+}
+float fbm(vec2 p){
+  float sum = 0.0;
+  float amp = 0.5;
+  mat2 rot = mat2(0.8,0.6,-0.6,0.8);
+  for (int i=0;i<4;i++){
+    sum += amp*noise(p);
+    p = rot*p*2.13;
+    amp *= 0.53;
+  }
+  return sum;
+}`;
+
+const FRAG_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec2 uDirection;
+uniform float uRadius;
+void main(){
+  vec4 sum = vec4(0.0);
+  float total = 0.0;
+  const int SAMPLES = 16;
+  for(int i=-SAMPLES;i<=SAMPLES;i++){
+    float t = float(i)/float(SAMPLES);
+    float w = exp(-t*t*2.0);
+    vec2 offset = uDirection * uRadius * t;
+    sum += texture(uTex, vUv+offset) * w;
+    total += w;
+  }
+  fragColor = sum/total;
+}`;
+
+const FRAG_PASSTHROUGH = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform vec3 uInk;
+uniform vec3 uBg;
+void main(){
+  float cov = texture(uTex, vUv).a;
+  fragColor = vec4(mix(uBg, uInk, cov), 1.0);
+}`;
+
+const FRAG_BLURDITHER = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uBlurredTex;
+uniform sampler2D uCrispTex;
+uniform float uDitherAmount;
+uniform float uDitherScale;
+uniform vec3 uInk;
+uniform vec3 uBg;
+uniform vec2 uResolution;
+${NOISE_GLSL}
+void main(){
+  float covBlur = texture(uBlurredTex, vUv).a;
+  float covCrisp = texture(uCrispTex, vUv).a;
+  float cov = max(covBlur, covCrisp*0.9);
+  vec2 cell = floor(gl_FragCoord.xy/uDitherScale);
+  float thresh = hash(cell) * 0.7 + hash(cell*1.7+3.1)*0.3;
+  float speck = step(thresh, cov);
+  float finalAlpha = mix(cov, speck, uDitherAmount);
+  fragColor = vec4(mix(uBg, uInk, finalAlpha), 1.0);
+}`;
+
+const FRAG_MELT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform sampler2D uEdgeTex;
+uniform float uMeltAmount;
+uniform float uMeltScale;
+uniform float uDripAmount;
+uniform float uSeed;
+uniform vec3 uInk;
+uniform vec3 uBg;
+uniform vec2 uResolution;
+${NOISE_GLSL}
+void main(){
+  vec2 uv = vUv;
+  float aspect = uResolution.x/uResolution.y;
+  vec2 p = vec2(uv.x*aspect, uv.y) * uMeltScale;
+
+  // ondulação orgânica no contorno (a tinta não escorre em linha reta)
+  float wx = fbm(p + uSeed) - 0.5;
+  float wy = fbm(p + uSeed + vec2(9.3, 1.7)) - 0.5;
+  vec2 wobbleUv = uv + vec2(wx, wy) * uMeltAmount * 0.035;
+  float covCrisp = texture(uTex, wobbleUv).a;
+
+  // fios que escorrem: cada coluna sabe onde a letra termina embaixo
+  // (pré-calculado na CPU); só algumas colunas ganham um fio, que afina
+  // até sumir — em vez de "ecoar" a letra inteira pra baixo.
+  vec4 edgeSample = texture(uEdgeTex, vec2(uv.x, 0.5));
+  float edgeV = edgeSample.r;
+  float hasInk = edgeSample.a;
+  float distBelow = edgeV - uv.y;
+
+  float strandProb = fbm(vec2(uv.x*55.0, uSeed*11.0));
+  float hasStrand = smoothstep(0.52, 0.7, strandProb);
+  float strandLen = uDripAmount * 0.6 * (0.25 + 0.95*fbm(vec2(uv.x*7.0, uSeed*3.0)));
+  float taper = 1.0 - smoothstep(strandLen*0.55, strandLen, distBelow);
+  float jitter = (fbm(vec2(uv.x*22.0 + distBelow*35.0, uSeed*8.0))-0.5)*0.012;
+  float strandSample = texture(uEdgeTex, vec2(uv.x+jitter, 0.5)).a;
+  float strandAlpha = hasStrand * taper * hasInk * strandSample * step(0.0, distBelow) * step(distBelow, strandLen);
+
+  float finalAlpha = clamp(max(covCrisp, strandAlpha), 0.0, 1.0);
+  fragColor = vec4(mix(uBg, uInk, finalAlpha), 1.0);
+}`;
+
+const FRAG_DEGRADE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 fragColor;
+uniform sampler2D uTex;
+uniform float uHalftone;
+uniform float uGlitch;
+uniform float uDropout;
+uniform float uContrast;
+uniform vec3 uInk;
+uniform vec3 uBg;
+uniform vec2 uResolution;
+${NOISE_GLSL}
+void main(){
+  vec2 uv = vUv;
+
+  float bandCount = 90.0;
+  float bandId = floor(uv.y*bandCount);
+  float bandRand = hash(vec2(bandId, 9.2));
+  float doGlitch = step(0.82, bandRand);
+  float bandShift = (hash(vec2(bandId, 3.7))-0.5) * uGlitch * 0.06 * doGlitch;
+  uv.x += bandShift;
+
+  float cov = texture(uTex, uv).a;
+
+  vec2 px = uv * uResolution;
+  float ang = 0.7854;
+  mat2 rot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
+  vec2 cellUv = rot*px;
+  float cellSize = mix(28.0, 6.0, 0.0) ;
+  cellSize = 18.0;
+  vec2 cellPos = fract(cellUv/cellSize)-0.5;
+  float dist = length(cellPos);
+  float dotRadius = sqrt(clamp(cov,0.0,1.0))*0.5;
+  float halftoneMask = 1.0 - smoothstep(dotRadius-0.06, dotRadius+0.06, dist);
+  float halftoneResult = mix(cov, halftoneMask, uHalftone);
+
+  float dropN = hash(floor(uv*uResolution*0.12));
+  float dropout = 1.0 - uDropout*step(dropN, 0.16);
+
+  float finalAlpha = halftoneResult * dropout;
+  finalAlpha = clamp((finalAlpha-0.5)*(1.0+uContrast*2.0)+0.5, 0.0, 1.0);
+
+  float grain = (hash(gl_FragCoord.xy*1.3)-0.5)*0.06;
+  vec3 col = mix(uBg, uInk, finalAlpha) + vec3(grain);
+
+  fragColor = vec4(clamp(col,0.0,1.0), 1.0);
+}`;
+
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+function bindQuad(prog){
+  const loc = gl.getAttribLocation(prog, "aPos");
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+}
+function drawQuad(){ gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
+
+const blurProg = linkProgram(VERT_QUAD, FRAG_BLUR);
+const passProg = linkProgram(VERT_QUAD, FRAG_PASSTHROUGH);
+const blurDitherProg = linkProgram(VERT_QUAD, FRAG_BLURDITHER);
+const meltProg = linkProgram(VERT_QUAD, FRAG_MELT);
+const degradeProg = linkProgram(VERT_QUAD, FRAG_DEGRADE);
+
+function createTexture(w,h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+function createFBO(tex){
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return fbo;
+}
+
+let textTex = null;
+let blurredTex = null, blurredFBO = null;
+let pingTex, pingFBO, pongTex, pongFBO;
+let edgeTex = null;
+let rasterCanvas = document.createElement("canvas");
+
+function ensureTargets(w,h){
+  textTex = createTexture(w,h);
+  blurredTex = createTexture(w,h); blurredFBO = createFBO(blurredTex);
+  pingTex = createTexture(w,h); pingFBO = createFBO(pingTex);
+  pongTex = createTexture(w,h); pongFBO = createFBO(pongTex);
+  edgeTex = createTexture(w,1);
+}
+
+function uploadRaster(){
+  gl.bindTexture(gl.TEXTURE_2D, textTex);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, rasterCanvas);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+}
+
+// pra cada coluna x, acha a linha mais baixa (mais próxima do fundo) que
+// ainda tem tinta — usado pelo modo Derreter pra saber de onde cada "fio"
+// de tinta escorrida deve partir.
+function computeColumnEdges(){
+  const w = RENDER_W, h = RENDER_H;
+  const ctx = rasterCanvas.getContext("2d");
+  const data = ctx.getImageData(0,0,w,h).data;
+  const buf = new Uint8Array(w*4);
+  for (let x=0; x<w; x++){
+    let bottomRow = -1;
+    for (let y=h-1; y>=0; y--){
+      if (data[(y*w+x)*4+3] > 20){ bottomRow = y; break; }
+    }
+    const has = bottomRow >= 0;
+    const edgeV = has ? (1 - bottomRow/h) : 0;
+    buf[x*4] = Math.round(edgeV*255);
+    buf[x*4+1] = 0;
+    buf[x*4+2] = 0;
+    buf[x*4+3] = has ? 255 : 0;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, edgeTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+}
+
+/* ---------------------------------------------------------------------
+   RASTERIZAÇÃO DE TEXTO
+--------------------------------------------------------------------- */
+
+function rasterizeSimple(){
+  const c = rasterCanvas;
+  c.width = RENDER_W; c.height = RENDER_H;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0,0,RENDER_W,RENDER_H);
+  const lines = state.text.split("\n").filter(l=>l.length>0);
+  if (lines.length===0) return;
+
+  const marginX = RENDER_W*0.06;
+  const maxW = RENDER_W - marginX*2;
+  let fontSize = RENDER_H*0.5;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  function widest(size){
+    ctx.font = `${FONT_WEIGHT} ${size}px "${FONT}"`;
+    let w = 0;
+    for (const l of lines) w = Math.max(w, ctx.measureText(l).width);
+    return w;
+  }
+  // ajusta o tamanho pra caber na largura
+  let lo=4, hi=RENDER_H*1.5;
+  for (let iter=0; iter<20; iter++){
+    const mid=(lo+hi)/2;
+    if (widest(mid) > maxW) hi=mid; else lo=mid;
+  }
+  fontSize = lo;
+  // também limita pela altura total do bloco de linhas
+  const lineHeight = fontSize*1.02;
+  const totalH = lineHeight*lines.length;
+  const maxH = RENDER_H*0.86;
+  if (totalH > maxH) fontSize *= maxH/totalH;
+
+  ctx.font = `${FONT_WEIGHT} ${fontSize}px "${FONT}"`;
+  const lh = fontSize*1.02;
+  const startY = RENDER_H/2 - (lh*(lines.length-1))/2;
+  ctx.fillStyle = "#fff";
+  lines.forEach((l,i)=>{
+    ctx.fillText(l, RENDER_W/2, startY + i*lh);
+  });
+}
+
+function rasterizeDenseBlock(){
+  const c = rasterCanvas;
+  c.width = RENDER_W; c.height = RENDER_H;
+  const ctx = c.getContext("2d");
+  ctx.clearRect(0,0,RENDER_W,RENDER_H);
+
+  let raw = state.text.replace(/\n+/g," ").trim();
+  if (state.block.removeSpaces) raw = raw.replace(/\s+/g,"");
+  else raw = raw.replace(/\s+/g," ");
+  if (!raw) return;
+
+  const marginX = RENDER_W*0.05;
+  const marginY = RENDER_H*0.05;
+  const targetW = RENDER_W - marginX*2;
+  const fontSize = Math.max(6, state.block.size/100 * RENDER_H*0.08);
+  ctx.font = `${FONT_WEIGHT} ${fontSize}px "${FONT}"`;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  const spacing = state.block.spacing/100 * fontSize*0.3;
+
+  function lineWidth(str){
+    let w=0;
+    for (const ch of str) w += ctx.measureText(ch).width + spacing;
+    return w - (str.length?spacing:0);
+  }
+
+  // greedy char wrap (pode quebrar no meio da palavra, igual referência)
+  const lines = [];
+  let i = 0;
+  while (i < raw.length){
+    let lo=1, hi=raw.length-i;
+    while (lo<hi){
+      const mid = Math.ceil((lo+hi)/2);
+      if (lineWidth(raw.substr(i,mid)) <= targetW) lo=mid; else hi=mid-1;
+    }
+    const take = Math.max(1, lo);
+    lines.push(raw.substr(i, take));
+    i += take;
+  }
+
+  const lineHeight = fontSize*1.12;
+  const totalH = lineHeight*lines.length;
+  let startY = RENDER_H/2 - totalH/2 + fontSize*0.8;
+  if (totalH > RENDER_H - marginY*2){
+    startY = marginY + fontSize*0.8;
+  }
+
+  ctx.fillStyle = "#fff";
+  lines.forEach((line, li)=>{
+    const isLast = li===lines.length-1;
+    const y = startY + li*lineHeight;
+    const naturalW = lineWidth(line);
+    const scaleX = (!isLast && naturalW>0) ? targetW/naturalW : 1;
+    ctx.save();
+    ctx.translate(marginX, y);
+    ctx.scale(scaleX, 1);
+    let x = 0;
+    for (const ch of line){
+      ctx.fillText(ch, x, 0);
+      x += ctx.measureText(ch).width + spacing;
+    }
+    ctx.restore();
+  });
+}
+
+function rasterize(){
+  if (state.mode === "block") rasterizeDenseBlock();
+  else rasterizeSimple();
+  uploadRaster();
+  if (state.mode === "melt") computeColumnEdges();
+}
+
+/* ---------------------------------------------------------------------
+   RENDER
+--------------------------------------------------------------------- */
+
+function hexToRgb(hex){
+  const v = parseInt(hex.slice(1),16);
+  return [((v>>16)&255)/255, ((v>>8)&255)/255, (v&255)/255];
+}
+
+function blurPass(srcTex, dstFBO, radiusPx){
+  gl.useProgram(blurProg);
+  bindQuad(blurProg);
+  const uDir = gl.getUniformLocation(blurProg,"uDirection");
+  const uRad = gl.getUniformLocation(blurProg,"uRadius");
+  const uTex = gl.getUniformLocation(blurProg,"uTex");
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(uTex, 0);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, pingFBO);
+  gl.viewport(0,0,RENDER_W,RENDER_H);
+  gl.bindTexture(gl.TEXTURE_2D, srcTex);
+  gl.uniform2f(uDir, 1.0/RENDER_W, 0.0);
+  gl.uniform1f(uRad, radiusPx);
+  drawQuad();
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, dstFBO);
+  gl.viewport(0,0,RENDER_W,RENDER_H);
+  gl.bindTexture(gl.TEXTURE_2D, pingTex);
+  gl.uniform2f(uDir, 0.0, 1.0/RENDER_H);
+  gl.uniform1f(uRad, radiusPx);
+  drawQuad();
+}
+
+function render(){
+  const ink = hexToRgb(state.ink);
+  const bg = hexToRgb(state.bg);
+
+  if (state.mode === "block"){
+    gl.useProgram(passProg);
+    bindQuad(passProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, textTex);
+    gl.uniform1i(gl.getUniformLocation(passProg,"uTex"), 0);
+    gl.uniform3f(gl.getUniformLocation(passProg,"uInk"), ink[0],ink[1],ink[2]);
+    gl.uniform3f(gl.getUniformLocation(passProg,"uBg"), bg[0],bg[1],bg[2]);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,RENDER_W,RENDER_H);
+    drawQuad();
+    return;
+  }
+
+  if (state.mode === "blur"){
+    const radiusPx = Math.max(0.5, state.blur.amount/100 * RENDER_H*0.05);
+    blurPass(textTex, blurredFBO, radiusPx);
+
+    gl.useProgram(blurDitherProg);
+    bindQuad(blurDitherProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, blurredTex);
+    gl.uniform1i(gl.getUniformLocation(blurDitherProg,"uBlurredTex"), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, textTex);
+    gl.uniform1i(gl.getUniformLocation(blurDitherProg,"uCrispTex"), 1);
+    gl.uniform1f(gl.getUniformLocation(blurDitherProg,"uDitherAmount"), state.blur.dither/100);
+    gl.uniform1f(gl.getUniformLocation(blurDitherProg,"uDitherScale"), Math.max(1, state.blur.grain/100*8+1));
+    gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uInk"), ink[0],ink[1],ink[2]);
+    gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uBg"), bg[0],bg[1],bg[2]);
+    gl.uniform2f(gl.getUniformLocation(blurDitherProg,"uResolution"), RENDER_W, RENDER_H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,RENDER_W,RENDER_H);
+    drawQuad();
+    return;
+  }
+
+  if (state.mode === "melt"){
+    gl.useProgram(meltProg);
+    bindQuad(meltProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, textTex);
+    gl.uniform1i(gl.getUniformLocation(meltProg,"uTex"), 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, edgeTex);
+    gl.uniform1i(gl.getUniformLocation(meltProg,"uEdgeTex"), 1);
+    gl.uniform1f(gl.getUniformLocation(meltProg,"uMeltAmount"), state.melt.amount/100);
+    gl.uniform1f(gl.getUniformLocation(meltProg,"uMeltScale"), 1+state.melt.scale/100*6);
+    gl.uniform1f(gl.getUniformLocation(meltProg,"uDripAmount"), state.melt.drip/100);
+    gl.uniform1f(gl.getUniformLocation(meltProg,"uSeed"), state.seed);
+    gl.uniform3f(gl.getUniformLocation(meltProg,"uInk"), ink[0],ink[1],ink[2]);
+    gl.uniform3f(gl.getUniformLocation(meltProg,"uBg"), bg[0],bg[1],bg[2]);
+    gl.uniform2f(gl.getUniformLocation(meltProg,"uResolution"), RENDER_W, RENDER_H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,RENDER_W,RENDER_H);
+    drawQuad();
+    return;
+  }
+
+  if (state.mode === "degrade"){
+    gl.useProgram(degradeProg);
+    bindQuad(degradeProg);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, textTex);
+    gl.uniform1i(gl.getUniformLocation(degradeProg,"uTex"), 0);
+    gl.uniform1f(gl.getUniformLocation(degradeProg,"uHalftone"), state.degrade.halftone/100);
+    gl.uniform1f(gl.getUniformLocation(degradeProg,"uGlitch"), state.degrade.glitch/100);
+    gl.uniform1f(gl.getUniformLocation(degradeProg,"uDropout"), state.degrade.dropout/100);
+    gl.uniform1f(gl.getUniformLocation(degradeProg,"uContrast"), state.degrade.contrast/100);
+    gl.uniform3f(gl.getUniformLocation(degradeProg,"uInk"), ink[0],ink[1],ink[2]);
+    gl.uniform3f(gl.getUniformLocation(degradeProg,"uBg"), bg[0],bg[1],bg[2]);
+    gl.uniform2f(gl.getUniformLocation(degradeProg,"uResolution"), RENDER_W, RENDER_H);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0,0,RENDER_W,RENDER_H);
+    drawQuad();
+    return;
+  }
+}
+
+function fullUpdate(){
+  rasterize();
+  render();
+}
+
+let renderQueued = false;
+let needsRasterize = false;
+function scheduleUpdate(full){
+  // requestRender e requestFullUpdate compartilham a mesma fila: se um
+  // render "barato" já está agendado quando um full update chega, o full
+  // update precisa "promover" esse agendamento, senão a rasterização fica
+  // pra trás (texto/modo novo, mas textura antiga).
+  if (full) needsRasterize = true;
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(()=>{
+    renderQueued = false;
+    if (needsRasterize){ needsRasterize = false; rasterize(); }
+    render();
+  });
+}
+function requestRender(){ scheduleUpdate(false); }
+function requestFullUpdate(){ scheduleUpdate(true);
+}
+
+/* ---------------------------------------------------------------------
+   RESOLUÇÃO
+--------------------------------------------------------------------- */
+
+function setResolution(longEdge){
+  const ratio = state.format.ratio;
+  if (ratio <= 1){ RENDER_H = Math.round(longEdge); RENDER_W = Math.round(longEdge*ratio); }
+  else { RENDER_W = Math.round(longEdge); RENDER_H = Math.round(longEdge/ratio); }
+  canvas.width = RENDER_W; canvas.height = RENDER_H;
+  document.getElementById("resLabel").textContent = `${RENDER_W} × ${RENDER_H}px`;
+  ensureTargets(RENDER_W, RENDER_H);
+}
+
+/* ---------------------------------------------------------------------
+   UI
+--------------------------------------------------------------------- */
+
+const formatSel = document.getElementById("formatSel");
+FORMATS.forEach(f=>{
+  const o = document.createElement("option");
+  o.value=f.key; o.textContent=f.label;
+  formatSel.appendChild(o);
+});
+formatSel.addEventListener("change", ()=>{
+  state.format = FORMATS.find(f=>f.key===formatSel.value);
+  setResolution(PREVIEW_LONG_EDGE);
+  requestFullUpdate();
+});
+
+const textInput = document.getElementById("textInput");
+textInput.value = state.text;
+textInput.addEventListener("input", ()=>{
+  state.text = textInput.value;
+  requestFullUpdate();
+});
+
+document.getElementById("inkColor").addEventListener("input", (e)=>{ state.ink=e.target.value; requestRender(); });
+document.getElementById("bgColor").addEventListener("input", (e)=>{ state.bg=e.target.value; requestRender(); });
+
+document.querySelectorAll(".modebtns button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".modebtns button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    state.mode = btn.dataset.mode;
+    renderModeParams();
+    requestFullUpdate();
+  });
+});
+
+function sliderRow(container, label, get, set, min=0, max=100, suffix="%"){
+  const row = document.createElement("div"); row.className="row";
+  const lbl = document.createElement("label"); lbl.textContent=label;
+  const inp = document.createElement("input"); inp.type="range"; inp.autocomplete="off"; inp.min=min; inp.max=max; inp.value=get();
+  const val = document.createElement("span"); val.className="val"; val.textContent=get()+suffix;
+  inp.addEventListener("input", ()=>{ set(+inp.value); val.textContent=inp.value+suffix; requestRender(); });
+  row.appendChild(lbl); row.appendChild(inp); row.appendChild(val);
+  container.appendChild(row);
+}
+
+function renderModeParams(){
+  const c = document.getElementById("modeParams");
+  c.innerHTML = "";
+  const panel = document.createElement("div"); panel.className="panel";
+  const h = document.createElement("h2");
+
+  if (state.mode==="blur"){
+    h.textContent = "Blur / Grão";
+    panel.appendChild(h);
+    sliderRow(panel,"Quantidade de blur", ()=>state.blur.amount, v=>state.blur.amount=v);
+    sliderRow(panel,"Granulado (dither)", ()=>state.blur.dither, v=>state.blur.dither=v);
+    sliderRow(panel,"Escala do grão", ()=>state.blur.grain, v=>state.blur.grain=v);
+  } else if (state.mode==="melt"){
+    h.textContent = "Derreter";
+    panel.appendChild(h);
+    sliderRow(panel,"Quantidade", ()=>state.melt.amount, v=>state.melt.amount=v);
+    sliderRow(panel,"Escala do ruído", ()=>state.melt.scale, v=>state.melt.scale=v);
+    sliderRow(panel,"Escorrido (drip)", ()=>state.melt.drip, v=>state.melt.drip=v);
+    const btnrow = document.createElement("div"); btnrow.className="btnrow";
+    const regen = document.createElement("button"); regen.className="ghost"; regen.style.flex="1";
+    regen.textContent = "Nova variação";
+    regen.addEventListener("click", ()=>{ state.seed = Math.random()*100; requestRender(); });
+    btnrow.appendChild(regen);
+    panel.appendChild(btnrow);
+  } else if (state.mode==="degrade"){
+    h.textContent = "Degradação";
+    panel.appendChild(h);
+    sliderRow(panel,"Halftone", ()=>state.degrade.halftone, v=>state.degrade.halftone=v);
+    sliderRow(panel,"Glitch (faixas)", ()=>state.degrade.glitch, v=>state.degrade.glitch=v);
+    sliderRow(panel,"Falha de tinta", ()=>state.degrade.dropout, v=>state.degrade.dropout=v);
+    sliderRow(panel,"Contraste", ()=>state.degrade.contrast, v=>state.degrade.contrast=v);
+  } else if (state.mode==="block"){
+    h.textContent = "Bloco denso";
+    panel.appendChild(h);
+    sliderRow(panel,"Tamanho da fonte", ()=>state.block.size, v=>{state.block.size=v; requestFullUpdate();});
+    sliderRow(panel,"Espaçamento", ()=>state.block.spacing, v=>{state.block.spacing=v; requestFullUpdate();});
+    const chk = document.createElement("div"); chk.className="check";
+    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=state.block.removeSpaces; cb.id="removeSpaces";
+    const cl = document.createElement("label"); cl.htmlFor="removeSpaces"; cl.textContent="Remover espaços entre palavras";
+    cb.addEventListener("change", ()=>{ state.block.removeSpaces=cb.checked; requestFullUpdate(); });
+    chk.appendChild(cb); chk.appendChild(cl);
+    panel.appendChild(chk);
+  }
+  c.appendChild(panel);
+}
+
+document.getElementById("exportBtn").addEventListener("click", async ()=>{
+  const scale = +document.getElementById("exportScale").value;
+  const targetLongEdge = Math.round(PREVIEW_LONG_EDGE*scale);
+  setResolution(targetLongEdge);
+  rasterize();
+  await new Promise(r=>requestAnimationFrame(r));
+  render();
+  canvas.toBlob((blob)=>{
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "typefx.png";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setResolution(PREVIEW_LONG_EDGE);
+    fullUpdate();
+  }, "image/png");
+});
+
+/* ---------------------------------------------------------------------
+   INIT
+--------------------------------------------------------------------- */
+
+async function init(){
+  await document.fonts.load(`900 100px "${FONT}"`).catch(()=>{});
+  await document.fonts.ready;
+  formatSel.value = state.format.key;
+  setResolution(PREVIEW_LONG_EDGE);
+  renderModeParams();
+  fullUpdate();
+}
+init();
+</script>
+</body>
+</html>
