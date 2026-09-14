@@ -211,7 +211,7 @@ const state = {
   melt: { amount: 45, scale: 35, drip: 55 },
   degrade: { glitch: 35, dropout: 30, contrast: 20 },
   block: { size: 60, spacing: 0, removeSpaces: true },
-  halftone: { shape: "circle", scale: 85, spacing: 40, angle: 45, invert: false },
+  halftone: { minDot: 5, maxDot: 55, cornerRadius: 55, spacing: 25, angle: 45, gridType: "regular", noise: 0, invert: false },
   pixelsort: { threshold: 50, direction: "horizontal", chance: 75, reverse: false },
   crosshatch: { scale: 45, thickness: 30, angle: 45, softness: 25 },
   adjust: { brightness: 0, contrast: 0, gamma: 100 },
@@ -427,39 +427,58 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uTex;
-uniform float uShape; // 0=círculo 1=linha 2=quadrado
-uniform float uDotScale;
+uniform float uMinDot;
+uniform float uMaxDot;
+uniform float uCornerRadius;
 uniform float uSpacing;
 uniform float uAngleDeg;
+uniform float uGridType; // 0=regular 1=benday (linhas ímpares deslocadas meia célula)
+uniform float uNoiseAmt; // jitter de posição por célula, em px
 uniform float uInvert;
 uniform vec3 uInk;
 uniform vec3 uBg;
 uniform vec2 uResolution;
-void main(){
-  float cov = texture(uTex, vUv).a;
-  if (uInvert > 0.5) cov = 1.0 - cov;
 
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
+
+// sdf de retângulo arredondado — com r=0 é um quadrado, com r=metade do
+// lado vira um círculo perfeito: um único parâmetro cobre as duas formas.
+float sdRoundRect(vec2 p, vec2 b, float r){
+  vec2 q = abs(p) - b + r;
+  return length(max(q,0.0)) + min(max(q.x,q.y),0.0) - r;
+}
+
+void main(){
   vec2 px = vUv * uResolution;
   float ang = radians(uAngleDeg);
   mat2 rot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
-  vec2 cellUv = rot*px;
-  float cellSize = uSpacing;
-  vec2 cellPos = fract(cellUv/cellSize)-0.5;
+  mat2 invRot = mat2(rot[0][0], rot[1][0], rot[0][1], rot[1][1]);
+  vec2 rp = rot*px;
 
-  float amount = sqrt(clamp(cov,0.0,1.0)) * (uDotScale/100.0);
-  float dist;
-  if (uShape < 0.5){
-    dist = length(cellPos);
-  } else if (uShape < 1.5){
-    dist = abs(cellPos.y);
-  } else {
-    dist = max(abs(cellPos.x), abs(cellPos.y));
-  }
-  float mask = 1.0 - smoothstep(amount*0.5-0.05, amount*0.5+0.05, dist);
-  // sem isso, a forma "linha"/"quadrado" desenha um traço fino cruzando o
-  // fundo inteiro (a distância até a linha é zero ao longo dela toda, não
-  // só num ponto como no círculo) — corta qualquer marca fora da tinta.
-  mask *= smoothstep(0.015, 0.05, cov);
+  float row = floor(rp.y/uSpacing);
+  bool shifted = uGridType > 0.5 && mod(row, 2.0) > 0.5;
+  vec2 rp2 = rp;
+  if (shifted) rp2.x += uSpacing*0.5;
+
+  vec2 cellIndex = floor(rp2/uSpacing);
+  vec2 cellCenter = (cellIndex+0.5)*uSpacing;
+  vec2 jitter = (vec2(hash(cellIndex), hash(cellIndex+vec2(9.7,3.1)))-0.5) * uNoiseAmt;
+  vec2 sampleCenter = cellCenter + jitter;
+
+  // desfaz o deslocamento benday antes de amostrar a cobertura de tinta
+  vec2 sampleRp = sampleCenter;
+  if (shifted) sampleRp.x -= uSpacing*0.5;
+  vec2 sampleUv = clamp((invRot*sampleRp)/uResolution, 0.0, 1.0);
+
+  float cov = texture(uTex, sampleUv).a;
+  if (uInvert > 0.5) cov = 1.0 - cov;
+
+  float dotSize = mix(uMinDot, uMaxDot, clamp(cov,0.0,1.0));
+  float r = clamp(uCornerRadius, 0.0, dotSize*0.5);
+
+  vec2 local = rp2 - sampleCenter;
+  float d = sdRoundRect(local, vec2(dotSize*0.5), r);
+  float mask = 1.0 - smoothstep(-1.0, 1.0, d);
 
   fragColor = vec4(mix(uBg, uInk, mask), 1.0);
 }`;
@@ -920,16 +939,21 @@ function renderEffect(){
   }
 
   if (state.mode === "halftone"){
+    // escala tudo em px relativo à resolução de referência (preview),
+    // pra densidade do padrão ficar igual entre preview e export em alta-res
+    const s = RENDER_H/PREVIEW_LONG_EDGE;
     gl.useProgram(halftoneProg);
     bindQuad(halftoneProg);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, textTex);
     gl.uniform1i(gl.getUniformLocation(halftoneProg,"uTex"), 0);
-    const shapeIdx = {circle:0, line:1, square:2}[state.halftone.shape] ?? 0;
-    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uShape"), shapeIdx);
-    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uDotScale"), state.halftone.scale);
-    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uSpacing"), 4+state.halftone.spacing/100*36);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uMinDot"), state.halftone.minDot/100*30*s);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uMaxDot"), (2+state.halftone.maxDot/100*38)*s);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uCornerRadius"), state.halftone.cornerRadius/100*30*s);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uSpacing"), (4+state.halftone.spacing/100*36)*s);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uAngleDeg"), state.halftone.angle);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uGridType"), state.halftone.gridType==="benday"?1:0);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uNoiseAmt"), state.halftone.noise/100*20*s);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uInvert"), state.halftone.invert?1:0);
     gl.uniform3f(gl.getUniformLocation(halftoneProg,"uInk"), ink[0],ink[1],ink[2]);
     gl.uniform3f(gl.getUniformLocation(halftoneProg,"uBg"), bg[0],bg[1],bg[2]);
@@ -1128,14 +1152,16 @@ function renderModeParams(){
   } else if (state.mode==="halftone"){
     h.textContent = "Halftone";
     panel.appendChild(h);
-    selectRow(panel,"Forma", ()=>state.halftone.shape, v=>state.halftone.shape=v, [
-      {value:"circle", label:"Círculo"},
-      {value:"line", label:"Linha"},
-      {value:"square", label:"Quadrado"},
+    selectRow(panel,"Grid", ()=>state.halftone.gridType, v=>state.halftone.gridType=v, [
+      {value:"regular", label:"Regular"},
+      {value:"benday", label:"Benday"},
     ]);
-    sliderRow(panel,"Escala do ponto", ()=>state.halftone.scale, v=>state.halftone.scale=v);
     sliderRow(panel,"Espaçamento", ()=>state.halftone.spacing, v=>state.halftone.spacing=v);
+    sliderRow(panel,"Ponto mínimo", ()=>state.halftone.minDot, v=>state.halftone.minDot=v);
+    sliderRow(panel,"Ponto máximo", ()=>state.halftone.maxDot, v=>state.halftone.maxDot=v);
+    sliderRow(panel,"Raio do canto", ()=>state.halftone.cornerRadius, v=>state.halftone.cornerRadius=v);
     sliderRow(panel,"Ângulo", ()=>state.halftone.angle, v=>state.halftone.angle=v, 0, 90, "°");
+    sliderRow(panel,"Ruído (posição)", ()=>state.halftone.noise, v=>state.halftone.noise=v);
     const chk = document.createElement("div"); chk.className="check";
     const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=state.halftone.invert; cb.id="haltInvert";
     const cl = document.createElement("label"); cl.htmlFor="haltInvert"; cl.textContent="Inverter";
