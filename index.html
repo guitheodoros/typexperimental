@@ -140,7 +140,7 @@
 
     <div class="panel">
       <h2>Texto</h2>
-      <textarea id="textInput">MOVING\nIN</textarea>
+      <textarea id="textInput"></textarea>
       <div class="segbtns" id="textAlignBtns" role="group" aria-label="Alinhamento do texto">
         <button data-align="left">Esquerda</button>
         <button data-align="center" class="active">Centro</button>
@@ -414,7 +414,7 @@ const PREVIEW_LONG_EDGE = 1400;
 
 const state = {
   mode: "blur",
-  text: "MOVING\nIN",
+  text: "",
   textAlign: "center",
   ink: "#111111",
   bg: "#f2f0ea",
@@ -535,7 +535,9 @@ void main(){
   float cov = max(covBlur, covCrisp*0.9);
   vec2 cell = floor(gl_FragCoord.xy/uDitherScale);
   float thresh = hash(cell) * 0.7 + hash(cell*1.7+3.1)*0.3;
-  float speck = step(thresh, cov);
+  // cov > 0: em algumas células o hash dá exatamente 0 e o step acenderia
+  // um grão solto longe de qualquer tinta (até com a caixa de texto vazia)
+  float speck = cov > 0.0 ? step(thresh, cov) : 0.0;
   float finalAlpha = mix(cov, speck, uDitherAmount);
   fragColor = vec4(uInk, 1.0)*finalAlpha + texture(uBgTex, vUv)*(1.0-finalAlpha);
 }`;
