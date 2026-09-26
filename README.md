@@ -1,4 +1,4 @@
-# Type FX
+# Typexperimental
 
 Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experimental — blur, halftone e hachura sobre o texto. Tudo roda no navegador; nada é enviado para fora.
 
