@@ -16,10 +16,10 @@ Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experi
 - **Texto** — alinhamento à esquerda, centro ou direita.
 - **Fonte** — família (34 fontes do Google Fonts em sans, condensada, serif, mono, display, pixel e manuscrita, baixadas só quando escolhidas; fontes do sistema; ou upload TTF/OTF/WOFF/WOFF2), tamanho, entrelinha, largura/altura do texto, kerning e blur prévio.
 - **Tinta** — cor da tinta.
-- **Fundo** — liso, degradê (ângulo + 4 cores com posição) ou imagem carregada.
+- **Fundo** — liso, degradê (ângulo + 4 cores com posição), imagem carregada ou transparente.
 - **Ajustes** — limiar (engorda/afina a tinta), inverter, brilho, contraste e gama.
 - **Formato** — proporção e zoom. Retrato: 3:4, 4:5, 2:3, A4, 9:16, 1:2 · Quadrado: 1:1 · Paisagem: 5:4, 4:3, 3:2, A4, 16:9, 2:1.
-- **Exportar** — PNG em até ~4200px no lado maior.
+- **Exportar** — PNG em preview (1400px), 2K ou 4K no lado maior, com opção de fundo transparente; o nome do arquivo leva tamanho, data e hora.
 
 ## Como usar
 

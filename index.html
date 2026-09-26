@@ -54,6 +54,16 @@
     display:flex; justify-content:space-between; font-size:11px;
     margin-bottom:8px; text-transform:uppercase; letter-spacing:.5px;
   }
+  #canvasHost.checker{
+    background-color:#fff;
+    background-image:
+      linear-gradient(45deg, #ececec 25%, transparent 25%),
+      linear-gradient(-45deg, #ececec 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #ececec 75%),
+      linear-gradient(-45deg, transparent 75%, #ececec 75%);
+    background-size:16px 16px;
+    background-position:0 0, 0 8px, 8px -8px, -8px 0;
+  }
   #canvasHost{
     position:relative; width:fit-content; max-width:100%; min-height:300px;
     display:flex; align-items:center; justify-content:center; overflow:hidden;
@@ -199,8 +209,10 @@
           <option value="flat">Liso</option>
           <option value="gradient">Degradê</option>
           <option value="image">Imagem</option>
+          <option value="transparent">Transparente (sem fundo)</option>
         </select>
       </div>
+      <div class="hint" id="bgTransparentHint">O PNG exportado sai com fundo transparente.</div>
       <div class="row" id="bgFlatRow">
         <label for="bgColor">Cor</label>
         <input type="color" id="bgColor" value="#f2f0ea">
@@ -270,17 +282,20 @@
 
     <div class="panel">
       <h2>Exportar</h2>
-      <div class="row">
-        <label for="exportScale">Resolução</label>
-        <select id="exportScale">
-          <option value="1.5">Média (~2100px)</option>
-          <option value="2" selected>Alta (~2800px)</option>
-          <option value="3">Máxima (~4200px)</option>
-        </select>
+      <div class="row"><label>Resolução (lado maior)</label></div>
+      <div class="segbtns" id="exportResBtns" role="group" aria-label="Resolução do export" style="margin:0 0 10px">
+        <button data-res="preview" class="active">Preview</button>
+        <button data-res="2048">2K</button>
+        <button data-res="4096">4K</button>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="exportTransparent">
+        <label for="exportTransparent">Fundo transparente</label>
       </div>
       <div class="btnrow">
-        <button id="exportBtn" style="flex:1">Exportar PNG</button>
+        <button id="exportBtn" style="flex:1">↓ Exportar PNG</button>
       </div>
+      <p id="exportStatus" style="font-size:10px; color:var(--muted); margin:8px 0 0; min-height:12px;"></p>
     </div>
 
   </div>
@@ -439,7 +454,9 @@ let RENDER_W = 0, RENDER_H = 0;
 --------------------------------------------------------------------- */
 
 const canvas = document.getElementById("glcanvas");
-const gl = canvas.getContext("webgl2", { preserveDrawingBuffer:true, alpha:false });
+// alpha:true pro fundo transparente; todo o pipeline trabalha com cor
+// pré-multiplicada (rgb já vezes alpha), que é o que o canvas espera.
+const gl = canvas.getContext("webgl2", { preserveDrawingBuffer:true, alpha:true, premultipliedAlpha:true });
 if (!gl) alert("Seu navegador não suporta WebGL2, necessário para esta ferramenta.");
 
 function compileShader(src, type){
@@ -520,7 +537,7 @@ void main(){
   float thresh = hash(cell) * 0.7 + hash(cell*1.7+3.1)*0.3;
   float speck = step(thresh, cov);
   float finalAlpha = mix(cov, speck, uDitherAmount);
-  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha), 1.0);
+  fragColor = vec4(uInk, 1.0)*finalAlpha + texture(uBgTex, vUv)*(1.0-finalAlpha);
 }`;
 
 const FRAG_HALFTONE = `#version 300 es
@@ -669,13 +686,29 @@ vec4 evalDot(vec2 local, float cov, float sizeMul, vec2 cellId){
   return vec4(c, 1.0 - smoothstep(-1.0, 1.0, d));
 }
 
+// composição de cada ponto sobre o que já existe (cor não
+// pré-multiplicada + alpha): "over" com modo de mesclagem pela fórmula da
+// W3C — sobre fundo transparente o ponto sai na cor pura, sobre fundo
+// opaco sai a cor mesclada.
+vec3 gCol;
+float gAlpha;
+void compositeDot(vec4 dotC){
+  vec3 src = mix(dotC.rgb, blendColor(gCol, dotC.rgb), gAlpha);
+  float m = dotC.a;
+  float outA = m + gAlpha*(1.0-m);
+  gCol = outA > 0.0 ? (src*m + gCol*gAlpha*(1.0-m))/outA : vec3(0.0);
+  gAlpha = outA;
+}
+
 void main(){
   vec2 px = vUv * uResolution;
   float ang = radians(uAngleDeg);
   gRot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
   gInvRot = mat2(gRot[0][0], gRot[1][0], gRot[0][1], gRot[1][1]);
   vec2 rp = gRot*px;
-  vec3 col = texture(uBgTex, vUv).rgb;
+  vec4 bg = texture(uBgTex, vUv);
+  gAlpha = bg.a;
+  gCol = bg.a > 0.0 ? bg.rgb/bg.a : vec3(0.0);
   float blockSize = uSpacing*uMergeSize;
 
   // pixel dentro de um bloco fundido: uma célula gigante só, sem vizinhos
@@ -688,8 +721,8 @@ void main(){
     vec2 center = vec2((cellId.x+0.5)*cellSize - shift, (row+0.5)*rowH);
     center += (vec2(hash(cellId), hash(cellId+vec2(9.7,3.1)))-0.5) * uNoiseAmt;
     vec4 dotC = evalDot(rp - center, coverageAt(center), cellSize/uSpacing, cellId);
-    col = mix(col, blendColor(col, dotC.rgb), dotC.a);
-    fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    compositeDot(dotC);
+    fragColor = vec4(clamp(gCol, 0.0, 1.0)*gAlpha, gAlpha);
     return;
   }
 
@@ -715,11 +748,11 @@ void main(){
       if (uMergeSize > 1.5 && blockMerged(floor(center/blockSize), blockSize)) continue;
       center += (vec2(hash(cellId), hash(cellId+vec2(9.7,3.1)))-0.5) * uNoiseAmt;
       vec4 dotC = evalDot(rp - center, coverageAt(center), 1.0, cellId);
-      col = mix(col, blendColor(col, dotC.rgb), dotC.a);
+      compositeDot(dotC);
     }
   }
 
-  fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+  fragColor = vec4(clamp(gCol, 0.0, 1.0)*gAlpha, gAlpha);
 }`;
 
 const FRAG_CROSSHATCH = `#version 300 es
@@ -747,7 +780,7 @@ void main(){
   if (tone > 0.74){ if (fract(p.x-p.y+0.5) < lw) hatch = 1.0; }
 
   float finalAlpha = hatch * step(0.05, tone);
-  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha), 1.0);
+  fragColor = vec4(uInk, 1.0)*finalAlpha + texture(uBgTex, vUv)*(1.0-finalAlpha);
 }`;
 
 const FRAG_ADJUST = `#version 300 es
@@ -763,11 +796,13 @@ uniform sampler2D uBgTex;
 void main(){
   vec2 zUv = (vUv-0.5)/max(uZoom,0.01) + 0.5;
   bool outside = zUv.x<0.0 || zUv.x>1.0 || zUv.y<0.0 || zUv.y>1.0;
-  vec3 col = outside ? texture(uBgTex, vUv).rgb : texture(uTex, clamp(zUv,0.0,1.0)).rgb;
+  vec4 c = outside ? texture(uBgTex, vUv) : texture(uTex, clamp(zUv,0.0,1.0));
+  // ajustes na cor "real" (des-pré-multiplicada); o alpha passa intacto
+  vec3 col = c.a > 0.0 ? c.rgb/c.a : vec3(0.0);
   col = (col-0.5)*(1.0+uContrast) + 0.5 + uBrightness;
   col = clamp(col, 0.0, 1.0);
   col = pow(col, vec3(1.0/uGamma));
-  fragColor = vec4(clamp(col,0.0,1.0), 1.0);
+  fragColor = vec4(clamp(col,0.0,1.0)*c.a, c.a);
 }`;
 
 const quadBuf = gl.createBuffer();
@@ -948,7 +983,11 @@ function applyCoverageMapping(){
 
 function drawBackground(ctx, w, h){
   const bgState = state.background;
+  if (bgState.mode === "transparent") return;
   if (bgState.mode === "image" && bgImage){
+    // cor lisa por baixo: PNG com áreas transparentes não "vaza" pro export
+    ctx.fillStyle = state.bg;
+    ctx.fillRect(0,0,w,h);
     const iw = bgImage.naturalWidth, ih = bgImage.naturalHeight;
     const scale = Math.max(w/iw, h/ih);
     ctx.drawImage(bgImage, (w-iw*scale)/2, (h-ih*scale)/2, iw*scale, ih*scale);
@@ -970,8 +1009,11 @@ function updateBackgroundTexture(){
   drawBackground(bgCanvas.getContext("2d"), RENDER_W, RENDER_H);
   gl.bindTexture(gl.TEXTURE_2D, bgTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bgCanvas);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  document.getElementById("canvasHost").classList.toggle("checker", state.background.mode === "transparent");
 }
 
 function rasterize(){
@@ -1348,11 +1390,20 @@ function syncBackgroundUI(){
   document.getElementById("bgFlatRow").classList.toggle("hidden", m!=="flat");
   document.getElementById("bgGradientRows").classList.toggle("hidden", m!=="gradient");
   document.getElementById("bgImageRows").classList.toggle("hidden", m!=="image");
+  document.getElementById("bgTransparentHint").classList.toggle("hidden", m!=="transparent");
+  document.getElementById("exportTransparent").checked = m==="transparent";
 }
-bgModeSel.addEventListener("change", ()=>{
-  state.background.mode = bgModeSel.value;
+// tipo de fundo antes de ligar o transparente, pra desmarcar e voltar a ele
+let bgModeBeforeTransparent = "flat";
+function setBackgroundMode(m){
+  if (m === "transparent" && state.background.mode !== "transparent") bgModeBeforeTransparent = state.background.mode;
+  state.background.mode = m;
   syncBackgroundUI();
   backgroundChanged();
+}
+bgModeSel.addEventListener("change", ()=>setBackgroundMode(bgModeSel.value));
+document.getElementById("exportTransparent").addEventListener("change", (e)=>{
+  setBackgroundMode(e.target.checked ? "transparent" : bgModeBeforeTransparent);
 });
 
 const bgGradAngle = document.getElementById("bgGradAngle");
@@ -1591,26 +1642,45 @@ function selectRow(container, label, get, set, options){
   container.appendChild(row);
 }
 
+let exportRes = "preview";
+document.querySelectorAll("#exportResBtns button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll("#exportResBtns button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    exportRes = btn.dataset.res;
+  });
+});
+
+// MMaa-HHmm no nome, pra reexportar não sobrescrever (nem virar "(1)")
+function exportTimestamp(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2,"0");
+  return `${pad(d.getMonth()+1)}${pad(d.getFullYear()%100)}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+}
+
 document.getElementById("exportBtn").addEventListener("click", ()=>{
-  // sem esperar requestAnimationFrame aqui: os comandos WebGL abaixo já
-  // são enfileirados de forma síncrona, e um rAF pendente pode nunca
-  // disparar se a aba estiver em segundo plano (ex: usuário trocou de
-  // aba logo depois de clicar exportar), travando a exportação.
-  const scale = +document.getElementById("exportScale").value;
-  const targetLongEdge = Math.round(PREVIEW_LONG_EDGE*scale);
-  setResolution(targetLongEdge);
-  rasterize();
-  render();
-  canvas.toBlob((blob)=>{
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "typexperimental.png";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setResolution(PREVIEW_LONG_EDGE);
-    fullUpdate();
-  }, "image/png");
+  const statusEl = document.getElementById("exportStatus");
+  statusEl.textContent = "gerando…";
+  // setTimeout (não requestAnimationFrame) só pra o "gerando…" aparecer
+  // antes do render pesado: rAF nunca dispara com a aba em segundo plano.
+  setTimeout(()=>{
+    const longEdge = exportRes === "preview" ? PREVIEW_LONG_EDGE : +exportRes;
+    setResolution(longEdge);
+    rasterize();
+    render();
+    const name = `typexperimental-${RENDER_W}x${RENDER_H}-${exportTimestamp()}.png`;
+    canvas.toBlob((blob)=>{
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href), 1500);
+      if (longEdge !== PREVIEW_LONG_EDGE){ setResolution(PREVIEW_LONG_EDGE); fullUpdate(); }
+      statusEl.textContent = "";
+    }, "image/png");
+  }, 30);
 });
 
 /* ---------------------------------------------------------------------
