@@ -322,10 +322,19 @@ function fontCss(px){
 }
 
 const FORMATS = [
-  { key:"3x4", label:"Retrato 3:4", ratio: 3/4 },
-  { key:"2x3", label:"Retrato 2:3", ratio: 2/3 },
-  { key:"square", label:"Quadrado", ratio: 1 },
-  { key:"4x3", label:"Paisagem 4:3", ratio: 4/3 },
+  { key:"3x4",   group:"Retrato",  label:"3:4",                ratio: 3/4 },
+  { key:"4x5",   group:"Retrato",  label:"4:5 (post Instagram)", ratio: 4/5 },
+  { key:"2x3",   group:"Retrato",  label:"2:3",                ratio: 2/3 },
+  { key:"aP",    group:"Retrato",  label:"A4 retrato (série A)", ratio: 1/Math.SQRT2 },
+  { key:"9x16",  group:"Retrato",  label:"9:16 (stories)",     ratio: 9/16 },
+  { key:"1x2",   group:"Retrato",  label:"1:2",                ratio: 1/2 },
+  { key:"square",group:"Quadrado", label:"1:1",                ratio: 1 },
+  { key:"5x4",   group:"Paisagem", label:"5:4",                ratio: 5/4 },
+  { key:"4x3",   group:"Paisagem", label:"4:3",                ratio: 4/3 },
+  { key:"3x2",   group:"Paisagem", label:"3:2",                ratio: 3/2 },
+  { key:"aL",    group:"Paisagem", label:"A4 paisagem (série A)", ratio: Math.SQRT2 },
+  { key:"16x9",  group:"Paisagem", label:"16:9",               ratio: 16/9 },
+  { key:"2x1",   group:"Paisagem", label:"2:1",                ratio: 2 },
 ];
 
 const PREVIEW_LONG_EDGE = 1400;
@@ -1014,7 +1023,8 @@ function renderEffect(){
   if (state.mode === "halftone"){
     // escala tudo em px relativo à resolução de referência (preview),
     // pra densidade do padrão ficar igual entre preview e export em alta-res
-    const s = RENDER_H/PREVIEW_LONG_EDGE;
+    // — pelo lado maior, senão formatos paisagem ganham pontos menores.
+    const s = Math.max(RENDER_W, RENDER_H)/PREVIEW_LONG_EDGE;
     gl.useProgram(halftoneProg);
     bindQuad(halftoneProg);
     gl.activeTexture(gl.TEXTURE0);
@@ -1145,10 +1155,16 @@ function setResolution(longEdge){
 --------------------------------------------------------------------- */
 
 const formatSel = document.getElementById("formatSel");
+const formatGroups = {};
 FORMATS.forEach(f=>{
+  if (!formatGroups[f.group]){
+    formatGroups[f.group] = document.createElement("optgroup");
+    formatGroups[f.group].label = f.group;
+    formatSel.appendChild(formatGroups[f.group]);
+  }
   const o = document.createElement("option");
   o.value=f.key; o.textContent=f.label;
-  formatSel.appendChild(o);
+  formatGroups[f.group].appendChild(o);
 });
 formatSel.addEventListener("change", ()=>{
   state.format = FORMATS.find(f=>f.key===formatSel.value);

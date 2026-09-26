@@ -18,7 +18,7 @@ Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experi
 - **Tinta** — cor da tinta.
 - **Fundo** — liso, degradê (ângulo + 4 cores com posição) ou imagem carregada.
 - **Ajustes** — limiar (engorda/afina a tinta), inverter, brilho, contraste e gama.
-- **Formato** — proporção (3:4, 2:3, quadrado, 4:3) e zoom.
+- **Formato** — proporção e zoom. Retrato: 3:4, 4:5, 2:3, A4, 9:16, 1:2 · Quadrado: 1:1 · Paisagem: 5:4, 4:3, 3:2, A4, 16:9, 2:1.
 - **Exportar** — PNG em até ~4200px no lado maior.
 
 ## Como usar
