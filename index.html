@@ -996,6 +996,10 @@ function bindBg(prog){
 
 function renderEffect(){
   const ink = hexToRgb(state.ink);
+  // tamanhos de padrão (grão, pontos, hachura) são definidos em px da
+  // preview; multiplicar por s mantém a mesma densidade no export em
+  // alta-res — pelo lado maior, senão formatos paisagem ficam mais finos.
+  const s = Math.max(RENDER_W, RENDER_H)/PREVIEW_LONG_EDGE;
 
   if (state.mode === "blur"){
     const radiusPx = Math.max(0.5, state.blur.amount/100 * RENDER_H*0.05);
@@ -1010,7 +1014,7 @@ function renderEffect(){
     gl.bindTexture(gl.TEXTURE_2D, textTex);
     gl.uniform1i(gl.getUniformLocation(blurDitherProg,"uCrispTex"), 1);
     gl.uniform1f(gl.getUniformLocation(blurDitherProg,"uDitherAmount"), state.blur.dither/100);
-    gl.uniform1f(gl.getUniformLocation(blurDitherProg,"uDitherScale"), Math.max(1, state.blur.grain/100*8+1));
+    gl.uniform1f(gl.getUniformLocation(blurDitherProg,"uDitherScale"), Math.max(1, (state.blur.grain/100*8+1)*s));
     gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uInk"), ink[0],ink[1],ink[2]);
     bindBg(blurDitherProg);
     gl.uniform2f(gl.getUniformLocation(blurDitherProg,"uResolution"), RENDER_W, RENDER_H);
@@ -1021,10 +1025,6 @@ function renderEffect(){
   }
 
   if (state.mode === "halftone"){
-    // escala tudo em px relativo à resolução de referência (preview),
-    // pra densidade do padrão ficar igual entre preview e export em alta-res
-    // — pelo lado maior, senão formatos paisagem ganham pontos menores.
-    const s = Math.max(RENDER_W, RENDER_H)/PREVIEW_LONG_EDGE;
     gl.useProgram(halftoneProg);
     bindQuad(halftoneProg);
     gl.activeTexture(gl.TEXTURE0);
@@ -1077,7 +1077,7 @@ function renderEffect(){
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, blurredTex);
     gl.uniform1i(gl.getUniformLocation(crosshatchProg,"uTex"), 0);
-    gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uScale"), 6+state.crosshatch.scale/100*40);
+    gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uScale"), (6+state.crosshatch.scale/100*40)*s);
     gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uThickness"), state.crosshatch.thickness);
     gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uAngleDeg"), state.crosshatch.angle);
     gl.uniform3f(gl.getUniformLocation(crosshatchProg,"uInk"), ink[0],ink[1],ink[2]);
