@@ -99,6 +99,11 @@
   .modebtns{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
   .modebtns button{ padding:9px 6px; font-size:10px; }
   .modebtns button.active{ background:var(--accent); border-color:var(--accent); }
+  .segbtns{ display:grid; grid-template-columns:1fr 1fr 1fr; margin-top:8px; }
+  .segbtns button{ padding:6px 4px; font-size:10px; background:transparent; color:var(--ink); }
+  .segbtns button + button{ border-left:none; }
+  .segbtns button:hover{ background:#ddd8cc; }
+  .segbtns button.active{ background:var(--ink); color:#fff; }
   footer{ margin-top:20px; font-size:10px; color:var(--muted); text-align:center; }
 </style>
 </head>
@@ -126,6 +131,11 @@
     <div class="panel">
       <h2>Texto</h2>
       <textarea id="textInput">MOVING\nIN</textarea>
+      <div class="segbtns" id="textAlignBtns" role="group" aria-label="Alinhamento do texto">
+        <button data-align="left">Esquerda</button>
+        <button data-align="center" class="active">Centro</button>
+        <button data-align="right">Direita</button>
+      </div>
     </div>
 
     <div class="panel">
@@ -323,6 +333,7 @@ const PREVIEW_LONG_EDGE = 1400;
 const state = {
   mode: "blur",
   text: "MOVING\nIN",
+  textAlign: "center",
   ink: "#111111",
   bg: "#f2f0ea",
   format: FORMATS[0],
@@ -772,13 +783,19 @@ function computeTextLayout(ctx){
   const heightPct = Math.max(0.1, state.font.height/100);
   const marginX = RENDER_W*0.06;
   const maxW = (RENDER_W - marginX*2) / widthPct;
-  ctx.textAlign = "center";
+  const align = state.textAlign;
+  ctx.textAlign = align;
   ctx.textBaseline = "middle";
+  const anchorX = align === "left" ? marginX : align === "right" ? RENDER_W - marginX : RENDER_W/2;
 
+  // mede já com o kerning aplicado (proporcional ao tamanho), senão kerning
+  // alto faz o texto vazar da imagem; desconta o espaço após a última letra.
   function widest(size){
     ctx.font = fontCss(size);
+    const sp = (state.font.kerning/100)*size*0.3;
+    try { ctx.letterSpacing = `${sp}px`; } catch(e){}
     let w = 0;
-    for (const l of lines) w = Math.max(w, ctx.measureText(l).width);
+    for (const l of lines) w = Math.max(w, ctx.measureText(l).width - sp);
     return w;
   }
   let lo=4, hi=RENDER_H*1.5;
@@ -794,10 +811,14 @@ function computeTextLayout(ctx){
   if (totalH0 > maxH) fontSize *= maxH/totalH0;
 
   ctx.font = fontCss(fontSize);
-  try { ctx.letterSpacing = `${(state.font.kerning/100)*fontSize*0.3}px`; } catch(e){}
+  const spacingPx = (state.font.kerning/100)*fontSize*0.3;
+  try { ctx.letterSpacing = `${spacingPx}px`; } catch(e){}
+  // o canvas soma o kerning também depois da última letra; sem compensar,
+  // texto alinhado à direita (e, pela metade, o centralizado) fica deslocado.
+  const alignShift = align === "right" ? spacingPx : align === "center" ? spacingPx/2 : 0;
   const lineHeight = fontSize*leadingMul;
   const startY = RENDER_H/2 - (lineHeight*(lines.length-1))/2;
-  return { lines, fontSize, lineHeight, startY, widthPct, heightPct };
+  return { lines, fontSize, lineHeight, startY, widthPct, heightPct, anchorX, alignShift };
 }
 
 function rasterizeSimple(){
@@ -811,9 +832,9 @@ function rasterizeSimple(){
   layout.lines.forEach((l,i)=>{
     const y = layout.startY + i*layout.lineHeight;
     ctx.save();
-    ctx.translate(RENDER_W/2, y);
+    ctx.translate(layout.anchorX, y);
     ctx.scale(layout.widthPct, layout.heightPct);
-    ctx.fillText(l, 0, 0);
+    ctx.fillText(l, layout.alignShift, 0);
     ctx.restore();
   });
 }
@@ -1148,6 +1169,15 @@ textInput.value = state.text;
 textInput.addEventListener("input", ()=>{
   state.text = textInput.value;
   requestFullUpdate();
+});
+
+document.querySelectorAll("#textAlignBtns button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll("#textAlignBtns button").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    state.textAlign = btn.dataset.align;
+    requestFullUpdate();
+  });
 });
 
 const fontFamilySel = document.getElementById("fontFamily");
