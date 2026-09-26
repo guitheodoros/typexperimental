@@ -1604,7 +1604,7 @@ document.getElementById("exportBtn").addEventListener("click", ()=>{
   canvas.toBlob((blob)=>{
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "typefx.png";
+    a.download = "typexperimental.png";
     document.body.appendChild(a);
     a.click();
     a.remove();
