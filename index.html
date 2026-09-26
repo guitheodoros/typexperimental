@@ -90,6 +90,12 @@
   }
   .filebtn:hover .fakebtn{ background:var(--ink); color:#fff; }
   .fontname{ font-size:10px; color:var(--muted); margin:-4px 0 8px; }
+  .hint{ font-size:10px; color:var(--muted); margin:-4px 0 8px; line-height:1.4; }
+  .subhead{
+    border-top:1px solid var(--ink); margin:10px 0 8px; padding-top:8px; font-size:10px;
+    text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
+  }
+  .hidden{ display:none !important; }
   .modebtns{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
   .modebtns button{ padding:9px 6px; font-size:10px; }
   .modebtns button.active{ background:var(--accent); border-color:var(--accent); }
@@ -171,19 +177,58 @@
     </div>
 
     <div class="panel">
-      <h2>Cores</h2>
+      <h2>Tinta</h2>
       <div class="row">
-        <label for="inkColor">Tinta</label>
+        <label for="inkColor">Cor</label>
         <input type="color" id="inkColor" value="#111111">
       </div>
+    </div>
+
+    <div class="panel">
+      <h2>Fundo</h2>
       <div class="row">
-        <label for="bgColor">Fundo</label>
+        <label for="bgMode">Tipo</label>
+        <select id="bgMode">
+          <option value="flat">Liso</option>
+          <option value="gradient">Degradê</option>
+          <option value="image">Imagem</option>
+        </select>
+      </div>
+      <div class="row" id="bgFlatRow">
+        <label for="bgColor">Cor</label>
         <input type="color" id="bgColor" value="#f2f0ea">
+      </div>
+      <div id="bgGradientRows">
+        <div class="row">
+          <label for="bgGradAngle">Ângulo</label>
+          <input type="range" id="bgGradAngle" autocomplete="off" min="0" max="360" value="45">
+          <span class="val" id="bgGradAngleVal">45°</span>
+        </div>
+        <div id="bgStops"></div>
+      </div>
+      <div id="bgImageRows">
+        <div class="btnrow">
+          <label class="filebtn" style="flex:1">
+            <input type="file" id="bgUpload" accept="image/*" style="display:none">
+            <span class="fakebtn">Carregar imagem de fundo</span>
+          </label>
+        </div>
+        <div class="hint" id="bgImageName" style="margin-top:6px">nenhuma imagem carregada</div>
       </div>
     </div>
 
     <div class="panel">
       <h2>Ajustes</h2>
+      <div class="row">
+        <label for="adjBias">Limiar (peso)</label>
+        <input type="range" id="adjBias" autocomplete="off" min="-100" max="100" value="0">
+        <span class="val" id="adjBiasVal">0</span>
+      </div>
+      <div class="hint">Engorda ou afina a tinta nas bordas — bem mais visível com Blur prévio.</div>
+      <div class="check">
+        <input type="checkbox" id="adjInvert">
+        <label for="adjInvert">Inverter (tinta vira fundo)</label>
+      </div>
       <div class="row">
         <label for="adjBrightness">Brilho</label>
         <input type="range" id="adjBrightness" autocomplete="off" min="-50" max="50" value="0">
@@ -293,15 +338,28 @@ const state = {
   block: { size: 60, spacing: 0, removeSpaces: true },
   halftone: {
     minDot: 5, maxDot: 55, cornerRadius: 55, spacing: 25, angle: 45,
-    gridType: "regular", noise: 0, invert: false,
+    gridType: "regular", noise: 0,
+    proportion: "square", overlap: 0, overlapX: 0, overlapY: 0,
     mergeSize: 1, mergeThreshold: 80,
     multiTone: false, toneLevels: 4,
-    toneColors: ["#f2f0ea", "#d8d8d8", "#8a8a8a", "#111111"],
-    toneShapes: ["round", "cross", "ring", "round"],
+    // com toneColorsAuto ligado, as cores são uma rampa fundo→tinta
+    // recalculada a cada render; editar qualquer cor desliga o automático.
+    toneColorsAuto: true,
+    toneColors: ["#f2f0ea", "#d8d8d8", "#b0b0b0", "#8a8a8a", "#444444", "#111111"],
+    toneShapes: ["round", "cross", "ring", "round", "diamond", "star"],
+    blend: "normal",
+    switchChance: 0, switchReach: 40, switchSeed: 3.7,
   },
   pixelsort: { threshold: 50, direction: "horizontal", chance: 75, reverse: false },
   crosshatch: { scale: 45, thickness: 30, angle: 45, softness: 25 },
-  adjust: { brightness: 0, contrast: 0, gamma: 100 },
+  adjust: { brightness: 0, contrast: 0, gamma: 100, bias: 0, invert: false },
+  background: {
+    mode: "flat", angle: 45,
+    stops: [
+      { color:"#f2f0ea", pos:0 }, { color:"#eadfcd", pos:35 },
+      { color:"#cdbca6", pos:70 }, { color:"#9a8d7c", pos:100 },
+    ],
+  },
   font: { family: "archivo", size: 100, leading: 100, width: 100, height: 100, kerning: 0, blur: 0 },
 };
 
@@ -399,11 +457,11 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uTex;
+uniform sampler2D uBgTex;
 uniform vec3 uInk;
-uniform vec3 uBg;
 void main(){
   float cov = texture(uTex, vUv).a;
-  fragColor = vec4(mix(uBg, uInk, cov), 1.0);
+  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, cov), 1.0);
 }`;
 
 const FRAG_BLURDITHER = `#version 300 es
@@ -415,7 +473,7 @@ uniform sampler2D uCrispTex;
 uniform float uDitherAmount;
 uniform float uDitherScale;
 uniform vec3 uInk;
-uniform vec3 uBg;
+uniform sampler2D uBgTex;
 uniform vec2 uResolution;
 ${NOISE_GLSL}
 void main(){
@@ -426,7 +484,7 @@ void main(){
   float thresh = hash(cell) * 0.7 + hash(cell*1.7+3.1)*0.3;
   float speck = step(thresh, cov);
   float finalAlpha = mix(cov, speck, uDitherAmount);
-  fragColor = vec4(mix(uBg, uInk, finalAlpha), 1.0);
+  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha), 1.0);
 }`;
 
 const FRAG_MELT = `#version 300 es
@@ -440,7 +498,7 @@ uniform float uMeltScale;
 uniform float uDripAmount;
 uniform float uSeed;
 uniform vec3 uInk;
-uniform vec3 uBg;
+uniform sampler2D uBgTex;
 uniform vec2 uResolution;
 ${NOISE_GLSL}
 void main(){
@@ -471,7 +529,7 @@ void main(){
   float strandAlpha = hasStrand * taper * hasInk * strandSample * step(0.0, distBelow) * step(distBelow, strandLen);
 
   float finalAlpha = clamp(max(covCrisp, strandAlpha), 0.0, 1.0);
-  fragColor = vec4(mix(uBg, uInk, finalAlpha), 1.0);
+  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha), 1.0);
 }`;
 
 const FRAG_DEGRADE = `#version 300 es
@@ -483,7 +541,7 @@ uniform float uGlitch;
 uniform float uDropout;
 uniform float uContrast;
 uniform vec3 uInk;
-uniform vec3 uBg;
+uniform sampler2D uBgTex;
 uniform vec2 uResolution;
 ${NOISE_GLSL}
 void main(){
@@ -505,7 +563,7 @@ void main(){
   finalAlpha = clamp((finalAlpha-0.5)*(1.0+uContrast*2.0)+0.5, 0.0, 1.0);
 
   float grain = (hash(gl_FragCoord.xy*1.3)-0.5)*0.06;
-  vec3 col = mix(uBg, uInk, finalAlpha) + vec3(grain);
+  vec3 col = mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha) + vec3(grain);
 
   fragColor = vec4(clamp(col,0.0,1.0), 1.0);
 }`;
@@ -515,6 +573,7 @@ precision highp float;
 in vec2 vUv;
 out vec4 fragColor;
 uniform sampler2D uTex;
+uniform sampler2D uBgTex;
 uniform float uMinDot;
 uniform float uMaxDot;
 uniform float uCornerRadius;
@@ -522,10 +581,14 @@ uniform float uSpacing;
 uniform float uAngleDeg;
 uniform float uGridType; // 0=regular 1=benday (linhas ímpares deslocadas meia célula) 2=hex
 uniform float uNoiseAmt; // jitter de posição por célula, em px
-uniform float uInvert;
 uniform vec3 uInk;
-uniform vec3 uBg;
 uniform vec2 uResolution;
+
+// desenho do ponto: proporção (0=1:1 1=largura aleatória 2=altura
+// aleatória) e sobreposição — o ponto pode passar do tamanho da célula,
+// por isso cada pixel avalia também os pontos das células vizinhas.
+uniform float uProportion;
+uniform vec2 uOverlap; // multiplicador final por eixo (1 = sem sobreposição)
 
 // fusão de área forte: em blocos muito escuros/claros, várias células
 // viram uma célula gigante só, pra não ficar um mosaico ruidoso onde já
@@ -533,12 +596,19 @@ uniform vec2 uResolution;
 uniform float uMergeSize; // 1 = desligado, 2/3/4 = NxN células por bloco
 uniform float uMergeThreshold;
 
-// multi-tom: em vez de um único ponto escalando por tom, o tom vira uma
-// de até 4 faixas discretas, cada uma com sua própria cor e forma.
+// meios-tons: em vez de um único ponto escalando por tom, o tom vira uma
+// de até 6 faixas discretas, cada uma com sua própria cor e forma.
 uniform float uMultiTone; // 0/1
 uniform int uToneLevels;
-uniform vec3 uToneColor[4];
-uniform float uToneShape[4]; // 0=círculo/quadrado(raio) 1=cruz 2=anel
+uniform vec3 uToneColor[6];
+uniform float uToneShape[6]; // 0=redondo(raio) 1=cruz 2=anel 3=losango 4=estrela
+uniform int uBlendMode;
+uniform float uSwitchChance;
+uniform float uSwitchReach;
+uniform float uSwitchSeed;
+
+mat2 gRot;
+mat2 gInvRot;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123); }
 
@@ -561,73 +631,140 @@ float sdCross(vec2 p, float size){
 float sdRing(vec2 p, float size){
   return abs(length(p) - size*0.32) - size*0.16;
 }
+float ndot(vec2 a, vec2 b){ return a.x*b.x - a.y*b.y; }
+float sdDiamond(vec2 p, float size){
+  vec2 b = vec2(size*0.5);
+  p = abs(p);
+  float h = clamp(ndot(b-2.0*p, b)/dot(b,b), -1.0, 1.0);
+  float d = length(p - 0.5*b*vec2(1.0-h, 1.0+h));
+  return d * sign(p.x*b.y + p.y*b.x - b.x*b.y);
+}
+float sdStar(vec2 p, float size){
+  float r = size*0.5;
+  const float n = 5.0;
+  const float m = 2.4;
+  float an = 3.141593/n;
+  float en = 3.141593/m;
+  vec2 acs = vec2(cos(an), sin(an));
+  vec2 ecs = vec2(cos(en), sin(en));
+  float bn = mod(atan(p.x, p.y), 2.0*an) - an;
+  p = length(p)*vec2(cos(bn), abs(sin(bn)));
+  p -= r*acs;
+  p += ecs*clamp(-dot(p, ecs), 0.0, r*acs.y/ecs.y);
+  return length(p)*sign(p.x);
+}
 float shapeDist(vec2 p, float size, float cornerR, float shapeType){
+  if (shapeType > 3.5) return sdStar(p, size);
+  if (shapeType > 2.5) return sdDiamond(p, size);
   if (shapeType > 1.5) return sdRing(p, size);
   if (shapeType > 0.5) return sdCross(p, size);
   return sdRoundRect(p, vec2(size*0.5), clamp(cornerR, 0.0, size*0.5));
 }
 
+// b = o que já está embaixo (fundo ou pontos anteriores), s = cor do ponto
+vec3 blendColor(vec3 b, vec3 s){
+  if (uBlendMode == 1) return b*s;
+  if (uBlendMode == 2) return 1.0 - (1.0-b)*(1.0-s);
+  if (uBlendMode == 3) return mix(2.0*b*s, 1.0-2.0*(1.0-b)*(1.0-s), step(0.5, b));
+  if (uBlendMode == 4) return mix(b - (1.0-2.0*s)*b*(1.0-b), b + (2.0*s-1.0)*(sqrt(b)-b), step(0.5, s));
+  if (uBlendMode == 5) return mix(2.0*b*s, 1.0-2.0*(1.0-b)*(1.0-s), step(0.5, s));
+  if (uBlendMode == 6) return min(vec3(1.0), b/max(1.0-s, vec3(0.001)));
+  if (uBlendMode == 7) return 1.0 - min(vec3(1.0), (1.0-b)/max(s, vec3(0.001)));
+  if (uBlendMode == 8) return abs(b - s);
+  return s;
+}
+
+float coverageAt(vec2 rpPos){
+  vec2 uv = clamp((gInvRot*rpPos)/uResolution, 0.0, 1.0);
+  return texture(uTex, uv).a;
+}
+
+bool blockMerged(vec2 blockIndex, float blockSize){
+  float c = coverageAt((blockIndex+0.5)*blockSize);
+  return max(c, 1.0-c) > uMergeThreshold;
+}
+
+// cor + máscara de um ponto; local = posição do pixel relativa ao centro
+vec4 evalDot(vec2 local, float cov, float sizeMul, vec2 cellId){
+  vec2 scl = uOverlap;
+  if (uProportion > 1.5) scl.y *= 0.25 + hash(cellId + vec2(9.1, 4.3))*1.5;
+  else if (uProportion > 0.5) scl.x *= 0.25 + hash(cellId + vec2(7.3, 2.9))*1.5;
+  vec2 q = local/scl;
+  float k = min(scl.x, scl.y);
+
+  float d;
+  vec3 c;
+  if (uMultiTone > 0.5){
+    int band = int(clamp(floor(cov*float(uToneLevels)), 0.0, float(uToneLevels-1)));
+    if (uSwitchChance > 0.0 && hash(cellId + uSwitchSeed) < uSwitchChance){
+      int reach = max(1, int(ceil(float(uToneLevels-1)*uSwitchReach)));
+      int shift = 1 + int(floor(hash(cellId + uSwitchSeed + 13.1)*float(reach)));
+      if (hash(cellId + uSwitchSeed + 27.7) < 0.5) shift = -shift;
+      band = clamp(band + shift, 0, uToneLevels-1);
+    }
+    float t = uToneLevels > 1 ? float(band)/float(uToneLevels-1) : 1.0;
+    float size = mix(uMinDot, uMaxDot, t)*sizeMul;
+    d = shapeDist(q, size, uCornerRadius, uToneShape[band])*k;
+    c = uToneColor[band];
+  } else {
+    float size = mix(uMinDot, uMaxDot, clamp(cov, 0.0, 1.0))*sizeMul;
+    d = sdRoundRect(q, vec2(size*0.5), clamp(uCornerRadius, 0.0, size*0.5))*k;
+    c = uInk;
+  }
+  return vec4(c, 1.0 - smoothstep(-1.0, 1.0, d));
+}
+
 void main(){
   vec2 px = vUv * uResolution;
   float ang = radians(uAngleDeg);
-  mat2 rot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
-  mat2 invRot = mat2(rot[0][0], rot[1][0], rot[0][1], rot[1][1]);
-  vec2 rp = rot*px;
+  gRot = mat2(cos(ang),-sin(ang),sin(ang),cos(ang));
+  gInvRot = mat2(gRot[0][0], gRot[1][0], gRot[0][1], gRot[1][1]);
+  vec2 rp = gRot*px;
+  vec3 col = texture(uBgTex, vUv).rgb;
+  float blockSize = uSpacing*uMergeSize;
 
-  // sonda grosseira no bloco NxN pra decidir se essa região funde
-  float cellSize = uSpacing;
-  if (uMergeSize > 1.5){
-    float blockSize = uSpacing*uMergeSize;
-    vec2 blockIndex = floor(rp/blockSize);
-    vec2 blockCenter = (blockIndex+0.5)*blockSize;
-    vec2 blockUv = clamp((invRot*blockCenter)/uResolution, 0.0, 1.0);
-    float blockCov = texture(uTex, blockUv).a;
-    float extreme = max(blockCov, 1.0-blockCov);
-    if (extreme > uMergeThreshold) cellSize = blockSize;
+  // pixel dentro de um bloco fundido: uma célula gigante só, sem vizinhos
+  if (uMergeSize > 1.5 && blockMerged(floor(rp/blockSize), blockSize)){
+    float cellSize = blockSize;
+    float rowH = (uGridType > 1.5) ? cellSize*0.866 : cellSize;
+    float row = floor(rp.y/rowH);
+    float shift = (uGridType > 0.5 && mod(row, 2.0) > 0.5) ? cellSize*0.5 : 0.0;
+    vec2 cellId = vec2(floor((rp.x+shift)/cellSize), row);
+    vec2 center = vec2((cellId.x+0.5)*cellSize - shift, (row+0.5)*rowH);
+    center += (vec2(hash(cellId), hash(cellId+vec2(9.7,3.1)))-0.5) * uNoiseAmt;
+    vec4 dotC = evalDot(rp - center, coverageAt(center), cellSize/uSpacing, cellId);
+    col = mix(col, blendColor(col, dotC.rgb), dotC.a);
+    fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    return;
   }
 
   // grade hex: linhas mais compactas verticalmente (empacotamento
   // hexagonal real, não só quadrados deslocados) — mesma lógica de
   // deslocar linhas ímpares que o benday usa, só com outra altura de linha.
+  float cellSize = uSpacing;
   float rowH = (uGridType > 1.5) ? cellSize*0.866 : cellSize;
-  float row = floor(rp.y/rowH);
-  bool shifted = uGridType > 0.5 && mod(row, 2.0) > 0.5;
-  vec2 rp2 = rp;
-  if (shifted) rp2.x += cellSize*0.5;
+  float propMul = uProportion > 0.5 ? 1.75 : 1.0;
+  float halfExtent = 0.5*max(uMinDot, uMaxDot)*max(uOverlap.x, uOverlap.y)*propMul + uNoiseAmt*0.5 + 1.0;
+  int reach = int(clamp(ceil(halfExtent/rowH - 0.5), 0.0, 2.0));
+  float row0 = floor(rp.y/rowH);
 
-  vec2 cellIndex = vec2(floor(rp2.x/cellSize), row);
-  vec2 cellCenter = vec2((cellIndex.x+0.5)*cellSize, (row+0.5)*rowH);
-  vec2 jitter = (vec2(hash(cellIndex), hash(cellIndex+vec2(9.7,3.1)))-0.5) * uNoiseAmt;
-  vec2 sampleCenter = cellCenter + jitter;
-
-  // desfaz o deslocamento benday/hex antes de amostrar a cobertura de tinta
-  vec2 sampleRp = sampleCenter;
-  if (shifted) sampleRp.x -= cellSize*0.5;
-  vec2 sampleUv = clamp((invRot*sampleRp)/uResolution, 0.0, 1.0);
-
-  float cov = texture(uTex, sampleUv).a;
-  if (uInvert > 0.5) cov = 1.0 - cov;
-  float sizeMul = cellSize/uSpacing;
-
-  vec3 col;
-  if (uMultiTone > 0.5){
-    int band = int(clamp(floor(cov*float(uToneLevels)), 0.0, float(uToneLevels-1)));
-    float t = float(uToneLevels)>1.0 ? float(band)/float(uToneLevels-1) : 1.0;
-    float dotSize = mix(uMinDot, uMaxDot, t) * sizeMul;
-    vec2 local = rp2 - sampleCenter;
-    float d = shapeDist(local, dotSize, uCornerRadius, uToneShape[band]);
-    float mask = 1.0 - smoothstep(-1.0, 1.0, d);
-    col = mix(uBg, uToneColor[band], mask);
-  } else {
-    float dotSize = mix(uMinDot, uMaxDot, clamp(cov,0.0,1.0)) * sizeMul;
-    float r = clamp(uCornerRadius, 0.0, dotSize*0.5);
-    vec2 local = rp2 - sampleCenter;
-    float d = sdRoundRect(local, vec2(dotSize*0.5), r);
-    float mask = 1.0 - smoothstep(-1.0, 1.0, d);
-    col = mix(uBg, uInk, mask);
+  for (int dr=-2; dr<=2; dr++){
+    if (abs(dr) > reach) continue;
+    float row = row0 + float(dr);
+    float shift = (uGridType > 0.5 && mod(row, 2.0) > 0.5) ? cellSize*0.5 : 0.0;
+    float col0 = floor((rp.x+shift)/cellSize);
+    for (int dc=-2; dc<=2; dc++){
+      if (abs(dc) > reach) continue;
+      vec2 cellId = vec2(col0 + float(dc), row);
+      vec2 center = vec2((cellId.x+0.5)*cellSize - shift, (row+0.5)*rowH);
+      if (uMergeSize > 1.5 && blockMerged(floor(center/blockSize), blockSize)) continue;
+      center += (vec2(hash(cellId), hash(cellId+vec2(9.7,3.1)))-0.5) * uNoiseAmt;
+      vec4 dotC = evalDot(rp - center, coverageAt(center), 1.0, cellId);
+      col = mix(col, blendColor(col, dotC.rgb), dotC.a);
+    }
   }
 
-  fragColor = vec4(col, 1.0);
+  fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
 const FRAG_DIRECT = `#version 300 es
@@ -648,7 +785,7 @@ uniform float uScale;
 uniform float uThickness;
 uniform float uAngleDeg;
 uniform vec3 uInk;
-uniform vec3 uBg;
+uniform sampler2D uBgTex;
 uniform vec2 uResolution;
 void main(){
   float tone = texture(uTex, vUv).a;
@@ -664,7 +801,7 @@ void main(){
   if (tone > 0.74){ if (fract(p.x-p.y+0.5) < lw) hatch = 1.0; }
 
   float finalAlpha = hatch * step(0.05, tone);
-  fragColor = vec4(mix(uBg, uInk, finalAlpha), 1.0);
+  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha), 1.0);
 }`;
 
 const FRAG_ADJUST = `#version 300 es
@@ -676,11 +813,11 @@ uniform float uBrightness;
 uniform float uContrast;
 uniform float uGamma;
 uniform float uZoom;
-uniform vec3 uBg;
+uniform sampler2D uBgTex;
 void main(){
   vec2 zUv = (vUv-0.5)/max(uZoom,0.01) + 0.5;
   bool outside = zUv.x<0.0 || zUv.x>1.0 || zUv.y<0.0 || zUv.y>1.0;
-  vec3 col = outside ? uBg : texture(uTex, clamp(zUv,0.0,1.0)).rgb;
+  vec3 col = outside ? texture(uBgTex, vUv).rgb : texture(uTex, clamp(zUv,0.0,1.0)).rgb;
   col = (col-0.5)*(1.0+uContrast) + 0.5 + uBrightness;
   col = clamp(col, 0.0, 1.0);
   col = pow(col, vec3(1.0/uGamma));
@@ -732,9 +869,17 @@ let pingTex, pingFBO, pongTex, pongFBO;
 let edgeTex = null;
 let effectTex = null, effectFBO = null;
 let pixelSortTex = null;
+let bgTex = null;
 let rasterCanvas = document.createElement("canvas");
+// fixa o canvas do texto em modo software desde a 1ª chamada: sem isso o
+// Chrome troca de GPU pra CPU depois de alguns getImageData e o
+// antialiasing das bordas muda — mesmo texto, contorno diferente.
+rasterCanvas.getContext("2d", { willReadFrequently:true });
+const bgCanvas = document.createElement("canvas");
+let bgImage = null;
 
 function ensureTargets(w,h){
+  bgTex = createTexture(w,h);
   textTex = createTexture(w,h);
   blurredTex = createTexture(w,h); blurredFBO = createFBO(blurredTex);
   pingTex = createTexture(w,h); pingFBO = createFBO(pingTex);
@@ -839,28 +984,24 @@ function rasterizeSimple(){
   });
 }
 
-// modo Pixel Sort: desenha com as cores reais (tinta sobre fundo) e
-// ordena os pixels de cada linha/coluna por luminância dentro de trechos
-// acima de um limiar — técnica clássica de "databending" glitch.
+// modo Pixel Sort: compõe as cores reais (tinta sobre o fundo, usando a
+// cobertura já processada de rasterCanvas) e ordena os pixels de cada
+// linha/coluna por luminância dentro de trechos acima de um limiar —
+// técnica clássica de "databending" glitch.
 function computeSortedPixelTexture(){
   const w = RENDER_W, h = RENDER_H;
   const work = document.createElement("canvas");
   work.width = w; work.height = h;
   const ctx = work.getContext("2d");
-  ctx.fillStyle = state.bg;
-  ctx.fillRect(0,0,w,h);
-  const layout = computeTextLayout(ctx);
-  if (layout){
-    ctx.fillStyle = state.ink;
-    layout.lines.forEach((l,i)=>{
-      const y = layout.startY + i*layout.lineHeight;
-      ctx.save();
-      ctx.translate(w/2, y);
-      ctx.scale(layout.widthPct, layout.heightPct);
-      ctx.fillText(l, 0, 0);
-      ctx.restore();
-    });
-  }
+  ctx.drawImage(bgCanvas, 0, 0);
+  const inkLayer = document.createElement("canvas");
+  inkLayer.width = w; inkLayer.height = h;
+  const ictx = inkLayer.getContext("2d");
+  ictx.fillStyle = state.ink;
+  ictx.fillRect(0,0,w,h);
+  ictx.globalCompositeOperation = "destination-in";
+  ictx.drawImage(rasterCanvas, 0, 0);
+  ctx.drawImage(inkLayer, 0, 0);
 
   const imgData = ctx.getImageData(0,0,w,h);
   const data = imgData.data;
@@ -993,10 +1134,63 @@ function applyPreBlur(){
   ctx.drawImage(tmp, 0, 0);
 }
 
+// limiar + inverter mexem na cobertura de tinta antes de qualquer modo.
+// O limiar é uma curva (não um deslocamento somado), então 0 continua 0 e
+// 1 continua 1: engorda/afina só as bordas, sem "véu" cinza no fundo.
+function applyCoverageMapping(){
+  const bias = state.adjust.bias/100;
+  const inv = state.adjust.invert;
+  if (bias === 0 && !inv) return;
+  const exponent = Math.pow(4, -bias);
+  const lut = new Uint8ClampedArray(256);
+  for (let i=0;i<256;i++){
+    let a = Math.pow(i/255, exponent);
+    if (inv) a = 1-a;
+    lut[i] = Math.round(a*255);
+  }
+  const ctx = rasterCanvas.getContext("2d");
+  const img = ctx.getImageData(0,0,rasterCanvas.width,rasterCanvas.height);
+  const d = img.data;
+  for (let i=0;i<d.length;i+=4){
+    d[i]=255; d[i+1]=255; d[i+2]=255;
+    d[i+3] = lut[d[i+3]];
+  }
+  ctx.putImageData(img,0,0);
+}
+
+function drawBackground(ctx, w, h){
+  const bgState = state.background;
+  if (bgState.mode === "image" && bgImage){
+    const iw = bgImage.naturalWidth, ih = bgImage.naturalHeight;
+    const scale = Math.max(w/iw, h/ih);
+    ctx.drawImage(bgImage, (w-iw*scale)/2, (h-ih*scale)/2, iw*scale, ih*scale);
+  } else if (bgState.mode === "gradient"){
+    const r = bgState.angle*Math.PI/180, cx = w/2, cy = h/2;
+    const len = Math.abs(w*Math.cos(r)) + Math.abs(h*Math.sin(r));
+    const g = ctx.createLinearGradient(cx-Math.cos(r)*len/2, cy-Math.sin(r)*len/2, cx+Math.cos(r)*len/2, cy+Math.sin(r)*len/2);
+    [...bgState.stops].sort((a,b)=>a.pos-b.pos).forEach(s=>g.addColorStop(s.pos/100, s.color));
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,w,h);
+  } else {
+    ctx.fillStyle = state.bg;
+    ctx.fillRect(0,0,w,h);
+  }
+}
+
+function updateBackgroundTexture(){
+  bgCanvas.width = RENDER_W; bgCanvas.height = RENDER_H;
+  drawBackground(bgCanvas.getContext("2d"), RENDER_W, RENDER_H);
+  gl.bindTexture(gl.TEXTURE_2D, bgTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bgCanvas);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+}
+
 function rasterize(){
   if (state.mode === "block") rasterizeDenseBlock();
   else rasterizeSimple();
-  if (state.mode !== "pixelsort") applyPreBlur();
+  applyPreBlur();
+  applyCoverageMapping();
   uploadRaster();
   if (state.mode === "melt") computeColumnEdges();
   if (state.mode === "pixelsort") computeSortedPixelTexture();
@@ -1009,6 +1203,36 @@ function rasterize(){
 function hexToRgb(hex){
   const v = parseInt(hex.slice(1),16);
   return [((v>>16)&255)/255, ((v>>8)&255)/255, (v&255)/255];
+}
+function rgbToHex(rgb){
+  return "#" + rgb.map(c=>Math.round(Math.min(1,Math.max(0,c))*255).toString(16).padStart(2,"0")).join("");
+}
+
+// ordem = índice usado no shader (uBlendMode)
+const BLEND_MODES = [
+  { value:"normal",     label:"Normal" },
+  { value:"multiply",   label:"Multiplicar" },
+  { value:"screen",     label:"Tela (screen)" },
+  { value:"overlay",    label:"Sobrepor (overlay)" },
+  { value:"softlight",  label:"Luz suave" },
+  { value:"hardlight",  label:"Luz direta" },
+  { value:"dodge",      label:"Subexposição de cor" },
+  { value:"burn",       label:"Superexposição de cor" },
+  { value:"difference", label:"Diferença" },
+];
+
+// rampa automática fundo→tinta: a faixa 1 (menos cobertura) é a cor do
+// fundo e a última é a tinta — nessa ordem, senão a tinta sólida cai na
+// cor mais clara e some.
+function currentToneColors(){
+  const h = state.halftone;
+  if (!h.toneColorsAuto) return h.toneColors;
+  const bg = hexToRgb(state.bg), ink = hexToRgb(state.ink);
+  const n = h.toneLevels;
+  return Array.from({length:6}, (_,i)=>{
+    const t = n>1 ? Math.min(1, i/(n-1)) : 1;
+    return rgbToHex(bg.map((b,k)=>b+(ink[k]-b)*t));
+  });
 }
 
 function blurPass(srcTex, dstFBO, radiusPx){
@@ -1035,9 +1259,16 @@ function blurPass(srcTex, dstFBO, radiusPx){
   drawQuad();
 }
 
+// fundo (liso/degradê/imagem) sempre na unidade 3 — cada shader mistura
+// a tinta sobre ele em vez de sobre uma cor fixa.
+function bindBg(prog){
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, bgTex);
+  gl.uniform1i(gl.getUniformLocation(prog,"uBgTex"), 3);
+}
+
 function renderEffect(){
   const ink = hexToRgb(state.ink);
-  const bg = hexToRgb(state.bg);
 
   if (state.mode === "block" || state.mode === "pixelsort"){
     const srcTex = state.mode === "pixelsort" ? pixelSortTex : textTex;
@@ -1049,7 +1280,7 @@ function renderEffect(){
     gl.uniform1i(gl.getUniformLocation(prog,"uTex"), 0);
     if (state.mode === "block"){
       gl.uniform3f(gl.getUniformLocation(prog,"uInk"), ink[0],ink[1],ink[2]);
-      gl.uniform3f(gl.getUniformLocation(prog,"uBg"), bg[0],bg[1],bg[2]);
+      bindBg(prog);
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
@@ -1072,7 +1303,7 @@ function renderEffect(){
     gl.uniform1f(gl.getUniformLocation(blurDitherProg,"uDitherAmount"), state.blur.dither/100);
     gl.uniform1f(gl.getUniformLocation(blurDitherProg,"uDitherScale"), Math.max(1, state.blur.grain/100*8+1));
     gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uInk"), ink[0],ink[1],ink[2]);
-    gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uBg"), bg[0],bg[1],bg[2]);
+    bindBg(blurDitherProg);
     gl.uniform2f(gl.getUniformLocation(blurDitherProg,"uResolution"), RENDER_W, RENDER_H);
     gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
@@ -1094,7 +1325,7 @@ function renderEffect(){
     gl.uniform1f(gl.getUniformLocation(meltProg,"uDripAmount"), state.melt.drip/100);
     gl.uniform1f(gl.getUniformLocation(meltProg,"uSeed"), state.seed);
     gl.uniform3f(gl.getUniformLocation(meltProg,"uInk"), ink[0],ink[1],ink[2]);
-    gl.uniform3f(gl.getUniformLocation(meltProg,"uBg"), bg[0],bg[1],bg[2]);
+    bindBg(meltProg);
     gl.uniform2f(gl.getUniformLocation(meltProg,"uResolution"), RENDER_W, RENDER_H);
     gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
@@ -1112,7 +1343,7 @@ function renderEffect(){
     gl.uniform1f(gl.getUniformLocation(degradeProg,"uDropout"), state.degrade.dropout/100);
     gl.uniform1f(gl.getUniformLocation(degradeProg,"uContrast"), state.degrade.contrast/100);
     gl.uniform3f(gl.getUniformLocation(degradeProg,"uInk"), ink[0],ink[1],ink[2]);
-    gl.uniform3f(gl.getUniformLocation(degradeProg,"uBg"), bg[0],bg[1],bg[2]);
+    bindBg(degradeProg);
     gl.uniform2f(gl.getUniformLocation(degradeProg,"uResolution"), RENDER_W, RENDER_H);
     gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
@@ -1136,19 +1367,26 @@ function renderEffect(){
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uAngleDeg"), state.halftone.angle);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uGridType"), {regular:0, benday:1, hex:2}[state.halftone.gridType] ?? 0);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uNoiseAmt"), state.halftone.noise/100*20*s);
-    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uInvert"), state.halftone.invert?1:0);
     gl.uniform3f(gl.getUniformLocation(halftoneProg,"uInk"), ink[0],ink[1],ink[2]);
-    gl.uniform3f(gl.getUniformLocation(halftoneProg,"uBg"), bg[0],bg[1],bg[2]);
+    bindBg(halftoneProg);
     gl.uniform2f(gl.getUniformLocation(halftoneProg,"uResolution"), RENDER_W, RENDER_H);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uProportion"), {square:0, randomW:1, randomH:2}[state.halftone.proportion] ?? 0);
+    const ov = state.halftone.overlap/100;
+    gl.uniform2f(gl.getUniformLocation(halftoneProg,"uOverlap"), 1+ov+state.halftone.overlapX/100, 1+ov+state.halftone.overlapY/100);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uMergeSize"), state.halftone.mergeSize);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uMergeThreshold"), state.halftone.mergeThreshold/100);
     gl.uniform1f(gl.getUniformLocation(halftoneProg,"uMultiTone"), state.halftone.multiTone?1:0);
     gl.uniform1i(gl.getUniformLocation(halftoneProg,"uToneLevels"), state.halftone.toneLevels);
-    const shapeIdx = {round:0, cross:1, ring:2};
-    const toneColorArr = new Float32Array(4*3);
-    const toneShapeArr = new Float32Array(4);
-    for (let i=0;i<4;i++){
-      const c = hexToRgb(state.halftone.toneColors[i]);
+    gl.uniform1i(gl.getUniformLocation(halftoneProg,"uBlendMode"), BLEND_MODES.findIndex(b=>b.value===state.halftone.blend));
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uSwitchChance"), state.halftone.multiTone ? state.halftone.switchChance/100 : 0);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uSwitchReach"), state.halftone.switchReach/100);
+    gl.uniform1f(gl.getUniformLocation(halftoneProg,"uSwitchSeed"), state.halftone.switchSeed);
+    const shapeIdx = {round:0, cross:1, ring:2, diamond:3, star:4};
+    const toneColors = currentToneColors();
+    const toneColorArr = new Float32Array(6*3);
+    const toneShapeArr = new Float32Array(6);
+    for (let i=0;i<6;i++){
+      const c = hexToRgb(toneColors[i]);
       toneColorArr[i*3]=c[0]; toneColorArr[i*3+1]=c[1]; toneColorArr[i*3+2]=c[2];
       toneShapeArr[i] = shapeIdx[state.halftone.toneShapes[i]] ?? 0;
     }
@@ -1173,7 +1411,7 @@ function renderEffect(){
     gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uThickness"), state.crosshatch.thickness);
     gl.uniform1f(gl.getUniformLocation(crosshatchProg,"uAngleDeg"), state.crosshatch.angle);
     gl.uniform3f(gl.getUniformLocation(crosshatchProg,"uInk"), ink[0],ink[1],ink[2]);
-    gl.uniform3f(gl.getUniformLocation(crosshatchProg,"uBg"), bg[0],bg[1],bg[2]);
+    bindBg(crosshatchProg);
     gl.uniform2f(gl.getUniformLocation(crosshatchProg,"uResolution"), RENDER_W, RENDER_H);
     gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
@@ -1192,8 +1430,7 @@ function applyAdjustments(){
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uContrast"), state.adjust.contrast/100);
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uGamma"), Math.max(0.2, state.adjust.gamma/100));
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uZoom"), state.zoom/100);
-  const bg = hexToRgb(state.bg);
-  gl.uniform3f(gl.getUniformLocation(adjustProg,"uBg"), bg[0],bg[1],bg[2]);
+  bindBg(adjustProg);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0,0,RENDER_W,RENDER_H);
   drawQuad();
@@ -1240,6 +1477,7 @@ function setResolution(longEdge){
   canvas.width = RENDER_W; canvas.height = RENDER_H;
   document.getElementById("resLabel").textContent = `${RENDER_W} × ${RENDER_H}px`;
   ensureTargets(RENDER_W, RENDER_H);
+  updateBackgroundTexture();
 }
 
 /* ---------------------------------------------------------------------
@@ -1333,9 +1571,87 @@ function colorChanged(){
   // um full update; os outros modos só recolorem no shader (render basta).
   if (state.mode === "pixelsort") requestFullUpdate();
   else requestRender();
+  // a rampa automática de meios-tons segue tinta/fundo: atualiza as amostras
+  if (state.mode === "halftone" && state.halftone.multiTone && state.halftone.toneColorsAuto) refreshToneSwatches();
+}
+function backgroundChanged(){
+  updateBackgroundTexture();
+  colorChanged();
 }
 document.getElementById("inkColor").addEventListener("input", (e)=>{ state.ink=e.target.value; colorChanged(); });
-document.getElementById("bgColor").addEventListener("input", (e)=>{ state.bg=e.target.value; colorChanged(); });
+document.getElementById("bgColor").addEventListener("input", (e)=>{ state.bg=e.target.value; backgroundChanged(); });
+
+const bgModeSel = document.getElementById("bgMode");
+function syncBackgroundUI(){
+  const m = state.background.mode;
+  bgModeSel.value = m;
+  document.getElementById("bgFlatRow").classList.toggle("hidden", m!=="flat");
+  document.getElementById("bgGradientRows").classList.toggle("hidden", m!=="gradient");
+  document.getElementById("bgImageRows").classList.toggle("hidden", m!=="image");
+}
+bgModeSel.addEventListener("change", ()=>{
+  state.background.mode = bgModeSel.value;
+  syncBackgroundUI();
+  backgroundChanged();
+});
+
+const bgGradAngle = document.getElementById("bgGradAngle");
+bgGradAngle.addEventListener("input", ()=>{
+  state.background.angle = +bgGradAngle.value;
+  document.getElementById("bgGradAngleVal").textContent = bgGradAngle.value+"°";
+  backgroundChanged();
+});
+
+function buildGradientStops(){
+  const host = document.getElementById("bgStops");
+  host.innerHTML = "";
+  state.background.stops.forEach((stop, i)=>{
+    const row = document.createElement("div"); row.className = "row";
+    const colorInp = document.createElement("input");
+    colorInp.type = "color"; colorInp.value = stop.color; colorInp.style.flex = "0 0 44px";
+    colorInp.setAttribute("aria-label", `Cor da parada ${i+1}`);
+    const posInp = document.createElement("input");
+    posInp.type = "range"; posInp.autocomplete = "off"; posInp.min = 0; posInp.max = 100; posInp.value = stop.pos;
+    posInp.setAttribute("aria-label", `Posição da parada ${i+1}`);
+    const val = document.createElement("span"); val.className = "val"; val.textContent = stop.pos+"%";
+    colorInp.addEventListener("input", ()=>{ stop.color = colorInp.value; backgroundChanged(); });
+    posInp.addEventListener("input", ()=>{ stop.pos = +posInp.value; val.textContent = posInp.value+"%"; backgroundChanged(); });
+    row.appendChild(colorInp); row.appendChild(posInp); row.appendChild(val);
+    host.appendChild(row);
+  });
+}
+buildGradientStops();
+
+let bgImageUrl = "";
+document.getElementById("bgUpload").addEventListener("change", async (e)=>{
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    if (bgImageUrl) URL.revokeObjectURL(bgImageUrl);
+    bgImageUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.src = bgImageUrl;
+    await img.decode();
+    bgImage = img;
+    state.background.mode = "image";
+    document.getElementById("bgImageName").textContent = file.name;
+    syncBackgroundUI();
+    backgroundChanged();
+  } catch(err){
+    console.error("Falha ao carregar imagem de fundo", err);
+    alert("Não foi possível carregar essa imagem.");
+  }
+});
+
+document.getElementById("adjBias").addEventListener("input", (e)=>{
+  state.adjust.bias = +e.target.value;
+  document.getElementById("adjBiasVal").textContent = e.target.value;
+  requestFullUpdate();
+});
+document.getElementById("adjInvert").addEventListener("change", (e)=>{
+  state.adjust.invert = e.target.checked;
+  requestFullUpdate();
+});
 
 function bindAdjustSlider(id, key){
   const el = document.getElementById(id);
@@ -1412,68 +1728,91 @@ function renderModeParams(){
     chk.appendChild(cb); chk.appendChild(cl);
     panel.appendChild(chk);
   } else if (state.mode==="halftone"){
+    const ht = state.halftone;
     h.textContent = "Halftone";
     panel.appendChild(h);
-    selectRow(panel,"Grid", ()=>state.halftone.gridType, v=>state.halftone.gridType=v, [
+    selectRow(panel,"Grid", ()=>ht.gridType, v=>ht.gridType=v, [
       {value:"regular", label:"Regular"},
       {value:"benday", label:"Benday"},
       {value:"hex", label:"Hex"},
     ]);
-    sliderRow(panel,"Espaçamento", ()=>state.halftone.spacing, v=>state.halftone.spacing=v);
-    sliderRow(panel,"Ponto mínimo", ()=>state.halftone.minDot, v=>state.halftone.minDot=v);
-    sliderRow(panel,"Ponto máximo", ()=>state.halftone.maxDot, v=>state.halftone.maxDot=v);
-    sliderRow(panel,"Raio do canto", ()=>state.halftone.cornerRadius, v=>state.halftone.cornerRadius=v);
-    sliderRow(panel,"Ângulo", ()=>state.halftone.angle, v=>state.halftone.angle=v, 0, 90, "°");
-    sliderRow(panel,"Ruído (posição)", ()=>state.halftone.noise, v=>state.halftone.noise=v);
-    const chk = document.createElement("div"); chk.className="check";
-    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=state.halftone.invert; cb.id="haltInvert";
-    const cl = document.createElement("label"); cl.htmlFor="haltInvert"; cl.textContent="Inverter";
-    cb.addEventListener("change", ()=>{ state.halftone.invert=cb.checked; requestRender(); });
-    chk.appendChild(cb); chk.appendChild(cl);
-    panel.appendChild(chk);
+    sliderRow(panel,"Espaçamento", ()=>ht.spacing, v=>ht.spacing=v);
+    sliderRow(panel,"Ponto mínimo", ()=>ht.minDot, v=>ht.minDot=v);
+    sliderRow(panel,"Ponto máximo", ()=>ht.maxDot, v=>ht.maxDot=v);
+    sliderRow(panel,"Raio do canto", ()=>ht.cornerRadius, v=>ht.cornerRadius=v);
+    sliderRow(panel,"Ângulo", ()=>ht.angle, v=>ht.angle=v, 0, 90, "°");
+    sliderRow(panel,"Ruído (posição)", ()=>ht.noise, v=>ht.noise=v);
 
-    const hr1 = document.createElement("div");
-    hr1.style.cssText = "border-top:1px solid var(--ink); margin:10px 0 8px; padding-top:8px; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);";
-    hr1.textContent = "Fusão de área forte";
-    panel.appendChild(hr1);
-    selectRow(panel,"Fusão", ()=>String(state.halftone.mergeSize), v=>{state.halftone.mergeSize=+v; requestRender();}, [
+    subhead(panel, "Desenho do ponto");
+    selectRow(panel,"Proporção", ()=>ht.proportion, v=>ht.proportion=v, [
+      {value:"square", label:"1:1"},
+      {value:"randomW", label:"Largura aleatória"},
+      {value:"randomH", label:"Altura aleatória"},
+    ]);
+    sliderRow(panel,"Sobreposição", ()=>ht.overlap, v=>ht.overlap=v);
+    sliderRow(panel,"Sobreposição X", ()=>ht.overlapX, v=>ht.overlapX=v);
+    sliderRow(panel,"Sobreposição Y", ()=>ht.overlapY, v=>ht.overlapY=v);
+
+    subhead(panel, "Fusão de área forte");
+    selectRow(panel,"Fusão", ()=>String(ht.mergeSize), v=>{ht.mergeSize=+v; requestRender();}, [
       {value:"1", label:"Desligado"},
       {value:"2", label:"2×2"},
       {value:"3", label:"3×3"},
       {value:"4", label:"4×4"},
     ]);
-    sliderRow(panel,"Limiar da fusão", ()=>state.halftone.mergeThreshold, v=>state.halftone.mergeThreshold=v);
+    sliderRow(panel,"Limiar da fusão", ()=>ht.mergeThreshold, v=>ht.mergeThreshold=v);
 
-    const hr2 = document.createElement("div");
-    hr2.style.cssText = "border-top:1px solid var(--ink); margin:10px 0 8px; padding-top:8px; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);";
-    hr2.textContent = "Multi-tom";
-    panel.appendChild(hr2);
+    subhead(panel, "Meios-tons");
+    selectRow(panel,"Mesclagem da cor", ()=>ht.blend, v=>ht.blend=v, BLEND_MODES);
     const mtChk = document.createElement("div"); mtChk.className="check";
-    const mtCb = document.createElement("input"); mtCb.type="checkbox"; mtCb.checked=state.halftone.multiTone; mtCb.id="haltMultiTone";
+    const mtCb = document.createElement("input"); mtCb.type="checkbox"; mtCb.checked=ht.multiTone; mtCb.id="haltMultiTone";
     const mtCl = document.createElement("label"); mtCl.htmlFor="haltMultiTone"; mtCl.textContent="Cor e forma por faixa de tom";
-    mtCb.addEventListener("change", ()=>{ state.halftone.multiTone=mtCb.checked; renderModeParams(); requestRender(); });
+    mtCb.addEventListener("change", ()=>{ ht.multiTone=mtCb.checked; renderModeParams(); requestRender(); });
     mtChk.appendChild(mtCb); mtChk.appendChild(mtCl);
     panel.appendChild(mtChk);
 
-    if (state.halftone.multiTone){
-      sliderRow(panel,"Níveis de tom", ()=>state.halftone.toneLevels, v=>{state.halftone.toneLevels=v; renderModeParams(); requestRender();}, 2, 4, "");
-      for (let i=0;i<state.halftone.toneLevels;i++){
+    if (ht.multiTone){
+      sliderRow(panel,"Níveis de tom", ()=>ht.toneLevels, v=>{ht.toneLevels=v; renderModeParams(); requestRender();}, 2, 6, "");
+      const colors = currentToneColors();
+      for (let i=0;i<ht.toneLevels;i++){
         const row = document.createElement("div"); row.className="row";
         const lbl = document.createElement("label"); lbl.textContent = `Tom ${i+1}`;
-        const colorInp = document.createElement("input"); colorInp.type="color"; colorInp.value=state.halftone.toneColors[i];
+        const colorInp = document.createElement("input"); colorInp.type="color"; colorInp.value=colors[i];
         colorInp.style.flex="1";
-        colorInp.addEventListener("input", ()=>{ state.halftone.toneColors[i]=colorInp.value; requestRender(); });
+        colorInp.dataset.toneSwatch = i;
+        colorInp.addEventListener("input", ()=>{
+          if (ht.toneColorsAuto){ ht.toneColors = currentToneColors().slice(); ht.toneColorsAuto = false; }
+          ht.toneColors[i]=colorInp.value;
+          requestRender();
+        });
         const shapeSel = document.createElement("select"); shapeSel.style.flex="1";
-        [{value:"round",label:"Redondo"},{value:"cross",label:"Cruz"},{value:"ring",label:"Anel"}].forEach(o=>{
+        TONE_SHAPES.forEach(o=>{
           const opt = document.createElement("option");
           opt.value=o.value; opt.textContent=o.label;
-          if (o.value===state.halftone.toneShapes[i]) opt.selected=true;
+          if (o.value===ht.toneShapes[i]) opt.selected=true;
           shapeSel.appendChild(opt);
         });
-        shapeSel.addEventListener("change", ()=>{ state.halftone.toneShapes[i]=shapeSel.value; requestRender(); });
+        shapeSel.addEventListener("change", ()=>{ ht.toneShapes[i]=shapeSel.value; requestRender(); });
         row.appendChild(lbl); row.appendChild(colorInp); row.appendChild(shapeSel);
         panel.appendChild(row);
       }
+      const autoRow = document.createElement("div"); autoRow.className="btnrow";
+      const autoBtn = document.createElement("button"); autoBtn.className="ghost"; autoBtn.style.flex="1";
+      autoBtn.textContent = "Rampa automática (fundo → tinta)";
+      autoBtn.addEventListener("click", ()=>{ ht.toneColorsAuto = true; refreshToneSwatches(); requestRender(); });
+      autoRow.appendChild(autoBtn);
+      panel.appendChild(autoRow);
+
+      const sw = document.createElement("div"); sw.style.marginTop = "10px";
+      panel.appendChild(sw);
+      sliderRow(panel,"Troca aleatória de tom", ()=>ht.switchChance, v=>ht.switchChance=v);
+      sliderRow(panel,"Alcance da troca", ()=>ht.switchReach, v=>ht.switchReach=v);
+      const swRow = document.createElement("div"); swRow.className="btnrow";
+      const swBtn = document.createElement("button"); swBtn.className="ghost"; swBtn.style.flex="1";
+      swBtn.textContent = "Nova variação da troca";
+      swBtn.addEventListener("click", ()=>{ ht.switchSeed = Math.random()*100; requestRender(); });
+      swRow.appendChild(swBtn);
+      panel.appendChild(swRow);
     }
   } else if (state.mode==="pixelsort"){
     h.textContent = "Pixel Sort";
@@ -1505,6 +1844,26 @@ function renderModeParams(){
     sliderRow(panel,"Suavização", ()=>state.crosshatch.softness, v=>state.crosshatch.softness=v);
   }
   c.appendChild(panel);
+}
+
+const TONE_SHAPES = [
+  {value:"round", label:"Redondo"},
+  {value:"cross", label:"Cruz"},
+  {value:"ring", label:"Anel"},
+  {value:"diamond", label:"Losango"},
+  {value:"star", label:"Estrela"},
+];
+
+function subhead(container, text){
+  const el = document.createElement("div");
+  el.className = "subhead";
+  el.textContent = text;
+  container.appendChild(el);
+}
+
+function refreshToneSwatches(){
+  const colors = currentToneColors();
+  document.querySelectorAll("[data-tone-swatch]").forEach(el=>{ el.value = colors[+el.dataset.toneSwatch]; });
 }
 
 function selectRow(container, label, get, set, options){
@@ -1552,6 +1911,7 @@ async function init(){
   await document.fonts.load(`900 100px "Archivo"`).catch(()=>{});
   await document.fonts.ready;
   formatSel.value = state.format.key;
+  syncBackgroundUI();
   setResolution(PREVIEW_LONG_EDGE);
   renderModeParams();
   fullUpdate();
