@@ -96,7 +96,7 @@
     text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
   }
   .hidden{ display:none !important; }
-  .modebtns{ display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .modebtns{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; }
   .modebtns button{ padding:9px 6px; font-size:10px; }
   .modebtns button.active{ background:var(--accent); border-color:var(--accent); }
   footer{ margin-top:20px; font-size:10px; color:var(--muted); text-align:center; }
@@ -106,7 +106,7 @@
 <header>
   <div>
     <h1>TYPE FX</h1>
-    <p>tipografia experimental — distorção, degradação e colapso do texto via WebGL</p>
+    <p>tipografia experimental — blur, halftone e hachura sobre o texto via WebGL</p>
   </div>
   <a href="https://theodoros.cc" target="_blank" rel="noopener">theodoros.cc</a>
 </header>
@@ -118,11 +118,7 @@
       <h2>Modo</h2>
       <div class="modebtns">
         <button data-mode="blur" class="active">Blur / Grão</button>
-        <button data-mode="melt">Derreter</button>
-        <button data-mode="degrade">Degradação</button>
-        <button data-mode="block">Bloco denso</button>
         <button data-mode="halftone">Halftone</button>
-        <button data-mode="pixelsort">Pixel Sort</button>
         <button data-mode="crosshatch">Crosshatch</button>
       </div>
     </div>
@@ -331,11 +327,7 @@ const state = {
   bg: "#f2f0ea",
   format: FORMATS[0],
   zoom: 100,
-  seed: 7.3,
   blur: { amount: 45, dither: 55, grain: 30 },
-  melt: { amount: 45, scale: 35, drip: 55 },
-  degrade: { glitch: 35, dropout: 30, contrast: 20 },
-  block: { size: 60, spacing: 0, removeSpaces: true },
   halftone: {
     minDot: 5, maxDot: 55, cornerRadius: 55, spacing: 25, angle: 45,
     gridType: "regular", noise: 0,
@@ -350,7 +342,6 @@ const state = {
     blend: "normal",
     switchChance: 0, switchReach: 40, switchSeed: 3.7,
   },
-  pixelsort: { threshold: 50, direction: "horizontal", chance: 75, reverse: false },
   crosshatch: { scale: 45, thickness: 30, angle: 45, softness: 25 },
   adjust: { brightness: 0, contrast: 0, gamma: 100, bias: 0, invert: false },
   background: {
@@ -408,27 +399,6 @@ void main(){
 const NOISE_GLSL = `
 float hash(vec2 p){
   return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453123);
-}
-float noise(vec2 p){
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  float a = hash(i);
-  float b = hash(i+vec2(1.0,0.0));
-  float c = hash(i+vec2(0.0,1.0));
-  float d = hash(i+vec2(1.0,1.0));
-  vec2 u = f*f*(3.0-2.0*f);
-  return mix(a,b,u.x) + (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y;
-}
-float fbm(vec2 p){
-  float sum = 0.0;
-  float amp = 0.5;
-  mat2 rot = mat2(0.8,0.6,-0.6,0.8);
-  for (int i=0;i<4;i++){
-    sum += amp*noise(p);
-    p = rot*p*2.13;
-    amp *= 0.53;
-  }
-  return sum;
 }`;
 
 const FRAG_BLUR = `#version 300 es
@@ -452,18 +422,6 @@ void main(){
   fragColor = sum/total;
 }`;
 
-const FRAG_PASSTHROUGH = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uTex;
-uniform sampler2D uBgTex;
-uniform vec3 uInk;
-void main(){
-  float cov = texture(uTex, vUv).a;
-  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, cov), 1.0);
-}`;
-
 const FRAG_BLURDITHER = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -485,87 +443,6 @@ void main(){
   float speck = step(thresh, cov);
   float finalAlpha = mix(cov, speck, uDitherAmount);
   fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha), 1.0);
-}`;
-
-const FRAG_MELT = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uTex;
-uniform sampler2D uEdgeTex;
-uniform float uMeltAmount;
-uniform float uMeltScale;
-uniform float uDripAmount;
-uniform float uSeed;
-uniform vec3 uInk;
-uniform sampler2D uBgTex;
-uniform vec2 uResolution;
-${NOISE_GLSL}
-void main(){
-  vec2 uv = vUv;
-  float aspect = uResolution.x/uResolution.y;
-  vec2 p = vec2(uv.x*aspect, uv.y) * uMeltScale;
-
-  // ondulação orgânica no contorno (a tinta não escorre em linha reta)
-  float wx = fbm(p + uSeed) - 0.5;
-  float wy = fbm(p + uSeed + vec2(9.3, 1.7)) - 0.5;
-  vec2 wobbleUv = uv + vec2(wx, wy) * uMeltAmount * 0.035;
-  float covCrisp = texture(uTex, wobbleUv).a;
-
-  // fios que escorrem: cada coluna sabe onde a letra termina embaixo
-  // (pré-calculado na CPU); só algumas colunas ganham um fio, que afina
-  // até sumir — em vez de "ecoar" a letra inteira pra baixo.
-  vec4 edgeSample = texture(uEdgeTex, vec2(uv.x, 0.5));
-  float edgeV = edgeSample.r;
-  float hasInk = edgeSample.a;
-  float distBelow = edgeV - uv.y;
-
-  float strandProb = fbm(vec2(uv.x*55.0, uSeed*11.0));
-  float hasStrand = smoothstep(0.52, 0.7, strandProb);
-  float strandLen = uDripAmount * 0.6 * (0.25 + 0.95*fbm(vec2(uv.x*7.0, uSeed*3.0)));
-  float taper = 1.0 - smoothstep(strandLen*0.55, strandLen, distBelow);
-  float jitter = (fbm(vec2(uv.x*22.0 + distBelow*35.0, uSeed*8.0))-0.5)*0.012;
-  float strandSample = texture(uEdgeTex, vec2(uv.x+jitter, 0.5)).a;
-  float strandAlpha = hasStrand * taper * hasInk * strandSample * step(0.0, distBelow) * step(distBelow, strandLen);
-
-  float finalAlpha = clamp(max(covCrisp, strandAlpha), 0.0, 1.0);
-  fragColor = vec4(mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha), 1.0);
-}`;
-
-const FRAG_DEGRADE = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uTex;
-uniform float uGlitch;
-uniform float uDropout;
-uniform float uContrast;
-uniform vec3 uInk;
-uniform sampler2D uBgTex;
-uniform vec2 uResolution;
-${NOISE_GLSL}
-void main(){
-  vec2 uv = vUv;
-
-  float bandCount = 90.0;
-  float bandId = floor(uv.y*bandCount);
-  float bandRand = hash(vec2(bandId, 9.2));
-  float doGlitch = step(0.82, bandRand);
-  float bandShift = (hash(vec2(bandId, 3.7))-0.5) * uGlitch * 0.06 * doGlitch;
-  uv.x += bandShift;
-
-  float cov = texture(uTex, uv).a;
-
-  float dropN = hash(floor(uv*uResolution*0.12));
-  float dropout = 1.0 - uDropout*step(dropN, 0.16);
-
-  float finalAlpha = cov * dropout;
-  finalAlpha = clamp((finalAlpha-0.5)*(1.0+uContrast*2.0)+0.5, 0.0, 1.0);
-
-  float grain = (hash(gl_FragCoord.xy*1.3)-0.5)*0.06;
-  vec3 col = mix(texture(uBgTex, vUv).rgb, uInk, finalAlpha) + vec3(grain);
-
-  fragColor = vec4(clamp(col,0.0,1.0), 1.0);
 }`;
 
 const FRAG_HALFTONE = `#version 300 es
@@ -767,15 +644,6 @@ void main(){
   fragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
 }`;
 
-const FRAG_DIRECT = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 fragColor;
-uniform sampler2D uTex;
-void main(){
-  fragColor = vec4(texture(uTex, vUv).rgb, 1.0);
-}`;
-
 const FRAG_CROSSHATCH = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -836,12 +704,8 @@ function bindQuad(prog){
 function drawQuad(){ gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); }
 
 const blurProg = linkProgram(VERT_QUAD, FRAG_BLUR);
-const passProg = linkProgram(VERT_QUAD, FRAG_PASSTHROUGH);
 const blurDitherProg = linkProgram(VERT_QUAD, FRAG_BLURDITHER);
-const meltProg = linkProgram(VERT_QUAD, FRAG_MELT);
-const degradeProg = linkProgram(VERT_QUAD, FRAG_DEGRADE);
 const halftoneProg = linkProgram(VERT_QUAD, FRAG_HALFTONE);
-const directProg = linkProgram(VERT_QUAD, FRAG_DIRECT);
 const crosshatchProg = linkProgram(VERT_QUAD, FRAG_CROSSHATCH);
 const adjustProg = linkProgram(VERT_QUAD, FRAG_ADJUST);
 
@@ -866,9 +730,7 @@ function createFBO(tex){
 let textTex = null;
 let blurredTex = null, blurredFBO = null;
 let pingTex, pingFBO, pongTex, pongFBO;
-let edgeTex = null;
 let effectTex = null, effectFBO = null;
-let pixelSortTex = null;
 let bgTex = null;
 let rasterCanvas = document.createElement("canvas");
 // fixa o canvas do texto em modo software desde a 1ª chamada: sem isso o
@@ -884,9 +746,7 @@ function ensureTargets(w,h){
   blurredTex = createTexture(w,h); blurredFBO = createFBO(blurredTex);
   pingTex = createTexture(w,h); pingFBO = createFBO(pingTex);
   pongTex = createTexture(w,h); pongFBO = createFBO(pongTex);
-  edgeTex = createTexture(w,1);
   effectTex = createTexture(w,h); effectFBO = createFBO(effectTex);
-  pixelSortTex = createTexture(w,h);
 }
 
 function uploadRaster(){
@@ -898,38 +758,12 @@ function uploadRaster(){
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
 }
 
-// pra cada coluna x, acha a linha mais baixa (mais próxima do fundo) que
-// ainda tem tinta — usado pelo modo Derreter pra saber de onde cada "fio"
-// de tinta escorrida deve partir.
-function computeColumnEdges(){
-  const w = RENDER_W, h = RENDER_H;
-  const ctx = rasterCanvas.getContext("2d");
-  const data = ctx.getImageData(0,0,w,h).data;
-  const buf = new Uint8Array(w*4);
-  for (let x=0; x<w; x++){
-    let bottomRow = -1;
-    for (let y=h-1; y>=0; y--){
-      if (data[(y*w+x)*4+3] > 20){ bottomRow = y; break; }
-    }
-    const has = bottomRow >= 0;
-    const edgeV = has ? (1 - bottomRow/h) : 0;
-    buf[x*4] = Math.round(edgeV*255);
-    buf[x*4+1] = 0;
-    buf[x*4+2] = 0;
-    buf[x*4+3] = has ? 255 : 0;
-  }
-  gl.bindTexture(gl.TEXTURE_2D, edgeTex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-}
-
 /* ---------------------------------------------------------------------
    RASTERIZAÇÃO DE TEXTO
 --------------------------------------------------------------------- */
 
 // calcula tamanho de fonte + posições pra caber o texto (multi-linha,
-// centrado) na largura/altura do canvas — compartilhado entre a
-// rasterização normal (branco sobre transparente) e a do pixel sort
-// (que precisa das cores reais já compostas).
+// centrado) na largura/altura do canvas.
 function computeTextLayout(ctx){
   const lines = state.text.split("\n").filter(l=>l.length>0);
   if (lines.length===0) return null;
@@ -984,143 +818,9 @@ function rasterizeSimple(){
   });
 }
 
-// modo Pixel Sort: compõe as cores reais (tinta sobre o fundo, usando a
-// cobertura já processada de rasterCanvas) e ordena os pixels de cada
-// linha/coluna por luminância dentro de trechos acima de um limiar —
-// técnica clássica de "databending" glitch.
-function computeSortedPixelTexture(){
-  const w = RENDER_W, h = RENDER_H;
-  const work = document.createElement("canvas");
-  work.width = w; work.height = h;
-  const ctx = work.getContext("2d");
-  ctx.drawImage(bgCanvas, 0, 0);
-  const inkLayer = document.createElement("canvas");
-  inkLayer.width = w; inkLayer.height = h;
-  const ictx = inkLayer.getContext("2d");
-  ictx.fillStyle = state.ink;
-  ictx.fillRect(0,0,w,h);
-  ictx.globalCompositeOperation = "destination-in";
-  ictx.drawImage(rasterCanvas, 0, 0);
-  ctx.drawImage(inkLayer, 0, 0);
-
-  const imgData = ctx.getImageData(0,0,w,h);
-  const data = imgData.data;
-  const threshold = state.pixelsort.threshold/100*255;
-  const chance = state.pixelsort.chance;
-  const reverse = state.pixelsort.reverse;
-  const horizontal = state.pixelsort.direction === "horizontal";
-
-  function lumAt(idx){ return 0.299*data[idx]+0.587*data[idx+1]+0.114*data[idx+2]; }
-  function sortRun(getIdx, len){
-    let p = 0;
-    while (p < len){
-      if (lumAt(getIdx(p)) < threshold){ p++; continue; }
-      let start = p;
-      while (p < len && lumAt(getIdx(p)) >= threshold) p++;
-      const end = p;
-      if (end-start > 1){
-        const slice = [];
-        for (let k=start;k<end;k++){
-          const idx = getIdx(k);
-          slice.push([data[idx],data[idx+1],data[idx+2],data[idx+3]]);
-        }
-        slice.sort((a,b)=>(0.299*a[0]+0.587*a[1]+0.114*a[2])-(0.299*b[0]+0.587*b[1]+0.114*b[2]));
-        if (reverse) slice.reverse();
-        for (let k=0;k<slice.length;k++){
-          const idx = getIdx(start+k);
-          data[idx]=slice[k][0]; data[idx+1]=slice[k][1]; data[idx+2]=slice[k][2]; data[idx+3]=slice[k][3];
-        }
-      }
-    }
-  }
-
-  if (horizontal){
-    for (let y=0;y<h;y++){
-      if (Math.random()*100 > chance) continue;
-      sortRun((x)=> (y*w+x)*4, w);
-    }
-  } else {
-    for (let x=0;x<w;x++){
-      if (Math.random()*100 > chance) continue;
-      sortRun((y)=> (y*w+x)*4, h);
-    }
-  }
-
-  ctx.putImageData(imgData,0,0);
-  gl.bindTexture(gl.TEXTURE_2D, pixelSortTex);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, work);
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-}
-
-function rasterizeDenseBlock(){
-  const c = rasterCanvas;
-  c.width = RENDER_W; c.height = RENDER_H;
-  const ctx = c.getContext("2d");
-  ctx.clearRect(0,0,RENDER_W,RENDER_H);
-
-  let raw = state.text.replace(/\n+/g," ").trim();
-  if (state.block.removeSpaces) raw = raw.replace(/\s+/g,"");
-  else raw = raw.replace(/\s+/g," ");
-  if (!raw) return;
-
-  const marginX = RENDER_W*0.05;
-  const marginY = RENDER_H*0.05;
-  const targetW = RENDER_W - marginX*2;
-  const fontSize = Math.max(6, state.block.size/100 * RENDER_H*0.08);
-  ctx.font = fontCss(fontSize);
-  ctx.textAlign = "left";
-  ctx.textBaseline = "alphabetic";
-  const spacing = state.block.spacing/100 * fontSize*0.3;
-
-  function lineWidth(str){
-    let w=0;
-    for (const ch of str) w += ctx.measureText(ch).width + spacing;
-    return w - (str.length?spacing:0);
-  }
-
-  // greedy char wrap (pode quebrar no meio da palavra, igual referência)
-  const lines = [];
-  let i = 0;
-  while (i < raw.length){
-    let lo=1, hi=raw.length-i;
-    while (lo<hi){
-      const mid = Math.ceil((lo+hi)/2);
-      if (lineWidth(raw.substr(i,mid)) <= targetW) lo=mid; else hi=mid-1;
-    }
-    const take = Math.max(1, lo);
-    lines.push(raw.substr(i, take));
-    i += take;
-  }
-
-  const lineHeight = fontSize*1.12;
-  const totalH = lineHeight*lines.length;
-  let startY = RENDER_H/2 - totalH/2 + fontSize*0.8;
-  if (totalH > RENDER_H - marginY*2){
-    startY = marginY + fontSize*0.8;
-  }
-
-  ctx.fillStyle = "#fff";
-  lines.forEach((line, li)=>{
-    const isLast = li===lines.length-1;
-    const y = startY + li*lineHeight;
-    const naturalW = lineWidth(line);
-    const scaleX = (!isLast && naturalW>0) ? targetW/naturalW : 1;
-    ctx.save();
-    ctx.translate(marginX, y);
-    ctx.scale(scaleX, 1);
-    let x = 0;
-    for (const ch of line){
-      ctx.fillText(ch, x, 0);
-      x += ctx.measureText(ch).width + spacing;
-    }
-    ctx.restore();
-  });
-}
-
-// desfoca o texto ANTES de qualquer efeito de modo — feito no canvas 2D
-// (não na GPU) pra ficar automaticamente consistente com tudo que lê
-// rasterCanvas diretamente, como a análise de coluna do modo Derreter.
+// desfoca o texto ANTES de qualquer efeito de modo — no canvas 2D, pra
+// que o Limiar (applyCoverageMapping, também na CPU) atue sobre a borda
+// já desfocada.
 function applyPreBlur(){
   const blurPx = state.font.blur/100 * RENDER_H*0.025;
   if (blurPx < 0.3) return;
@@ -1187,13 +887,10 @@ function updateBackgroundTexture(){
 }
 
 function rasterize(){
-  if (state.mode === "block") rasterizeDenseBlock();
-  else rasterizeSimple();
+  rasterizeSimple();
   applyPreBlur();
   applyCoverageMapping();
   uploadRaster();
-  if (state.mode === "melt") computeColumnEdges();
-  if (state.mode === "pixelsort") computeSortedPixelTexture();
 }
 
 /* ---------------------------------------------------------------------
@@ -1270,24 +967,6 @@ function bindBg(prog){
 function renderEffect(){
   const ink = hexToRgb(state.ink);
 
-  if (state.mode === "block" || state.mode === "pixelsort"){
-    const srcTex = state.mode === "pixelsort" ? pixelSortTex : textTex;
-    const prog = state.mode === "pixelsort" ? directProg : passProg;
-    gl.useProgram(prog);
-    bindQuad(prog);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, srcTex);
-    gl.uniform1i(gl.getUniformLocation(prog,"uTex"), 0);
-    if (state.mode === "block"){
-      gl.uniform3f(gl.getUniformLocation(prog,"uInk"), ink[0],ink[1],ink[2]);
-      bindBg(prog);
-    }
-    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
-    gl.viewport(0,0,RENDER_W,RENDER_H);
-    drawQuad();
-    return;
-  }
-
   if (state.mode === "blur"){
     const radiusPx = Math.max(0.5, state.blur.amount/100 * RENDER_H*0.05);
     blurPass(textTex, blurredFBO, radiusPx);
@@ -1305,46 +984,6 @@ function renderEffect(){
     gl.uniform3f(gl.getUniformLocation(blurDitherProg,"uInk"), ink[0],ink[1],ink[2]);
     bindBg(blurDitherProg);
     gl.uniform2f(gl.getUniformLocation(blurDitherProg,"uResolution"), RENDER_W, RENDER_H);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
-    gl.viewport(0,0,RENDER_W,RENDER_H);
-    drawQuad();
-    return;
-  }
-
-  if (state.mode === "melt"){
-    gl.useProgram(meltProg);
-    bindQuad(meltProg);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, textTex);
-    gl.uniform1i(gl.getUniformLocation(meltProg,"uTex"), 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, edgeTex);
-    gl.uniform1i(gl.getUniformLocation(meltProg,"uEdgeTex"), 1);
-    gl.uniform1f(gl.getUniformLocation(meltProg,"uMeltAmount"), state.melt.amount/100);
-    gl.uniform1f(gl.getUniformLocation(meltProg,"uMeltScale"), 1+state.melt.scale/100*6);
-    gl.uniform1f(gl.getUniformLocation(meltProg,"uDripAmount"), state.melt.drip/100);
-    gl.uniform1f(gl.getUniformLocation(meltProg,"uSeed"), state.seed);
-    gl.uniform3f(gl.getUniformLocation(meltProg,"uInk"), ink[0],ink[1],ink[2]);
-    bindBg(meltProg);
-    gl.uniform2f(gl.getUniformLocation(meltProg,"uResolution"), RENDER_W, RENDER_H);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
-    gl.viewport(0,0,RENDER_W,RENDER_H);
-    drawQuad();
-    return;
-  }
-
-  if (state.mode === "degrade"){
-    gl.useProgram(degradeProg);
-    bindQuad(degradeProg);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, textTex);
-    gl.uniform1i(gl.getUniformLocation(degradeProg,"uTex"), 0);
-    gl.uniform1f(gl.getUniformLocation(degradeProg,"uGlitch"), state.degrade.glitch/100);
-    gl.uniform1f(gl.getUniformLocation(degradeProg,"uDropout"), state.degrade.dropout/100);
-    gl.uniform1f(gl.getUniformLocation(degradeProg,"uContrast"), state.degrade.contrast/100);
-    gl.uniform3f(gl.getUniformLocation(degradeProg,"uInk"), ink[0],ink[1],ink[2]);
-    bindBg(degradeProg);
-    gl.uniform2f(gl.getUniformLocation(degradeProg,"uResolution"), RENDER_W, RENDER_H);
     gl.bindFramebuffer(gl.FRAMEBUFFER, effectFBO);
     gl.viewport(0,0,RENDER_W,RENDER_H);
     drawQuad();
@@ -1567,10 +1206,7 @@ bindFontSlider("fontKerning","kerning");
 bindFontSlider("fontBlur","blur");
 
 function colorChanged(){
-  // pixel sort compõe a cor já na rasterização (CPU), então precisa de
-  // um full update; os outros modos só recolorem no shader (render basta).
-  if (state.mode === "pixelsort") requestFullUpdate();
-  else requestRender();
+  requestRender();
   // a rampa automática de meios-tons segue tinta/fundo: atualiza as amostras
   if (state.mode === "halftone" && state.halftone.multiTone && state.halftone.toneColorsAuto) refreshToneSwatches();
 }
@@ -1698,35 +1334,6 @@ function renderModeParams(){
     sliderRow(panel,"Quantidade de blur", ()=>state.blur.amount, v=>state.blur.amount=v);
     sliderRow(panel,"Granulado (dither)", ()=>state.blur.dither, v=>state.blur.dither=v);
     sliderRow(panel,"Escala do grão", ()=>state.blur.grain, v=>state.blur.grain=v);
-  } else if (state.mode==="melt"){
-    h.textContent = "Derreter";
-    panel.appendChild(h);
-    sliderRow(panel,"Quantidade", ()=>state.melt.amount, v=>state.melt.amount=v);
-    sliderRow(panel,"Escala do ruído", ()=>state.melt.scale, v=>state.melt.scale=v);
-    sliderRow(panel,"Escorrido (drip)", ()=>state.melt.drip, v=>state.melt.drip=v);
-    const btnrow = document.createElement("div"); btnrow.className="btnrow";
-    const regen = document.createElement("button"); regen.className="ghost"; regen.style.flex="1";
-    regen.textContent = "Nova variação";
-    regen.addEventListener("click", ()=>{ state.seed = Math.random()*100; requestRender(); });
-    btnrow.appendChild(regen);
-    panel.appendChild(btnrow);
-  } else if (state.mode==="degrade"){
-    h.textContent = "Degradação";
-    panel.appendChild(h);
-    sliderRow(panel,"Glitch (faixas)", ()=>state.degrade.glitch, v=>state.degrade.glitch=v);
-    sliderRow(panel,"Falha de tinta", ()=>state.degrade.dropout, v=>state.degrade.dropout=v);
-    sliderRow(panel,"Contraste", ()=>state.degrade.contrast, v=>state.degrade.contrast=v);
-  } else if (state.mode==="block"){
-    h.textContent = "Bloco denso";
-    panel.appendChild(h);
-    sliderRow(panel,"Tamanho da fonte", ()=>state.block.size, v=>{state.block.size=v; requestFullUpdate();});
-    sliderRow(panel,"Espaçamento", ()=>state.block.spacing, v=>{state.block.spacing=v; requestFullUpdate();});
-    const chk = document.createElement("div"); chk.className="check";
-    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=state.block.removeSpaces; cb.id="removeSpaces";
-    const cl = document.createElement("label"); cl.htmlFor="removeSpaces"; cl.textContent="Remover espaços entre palavras";
-    cb.addEventListener("change", ()=>{ state.block.removeSpaces=cb.checked; requestFullUpdate(); });
-    chk.appendChild(cb); chk.appendChild(cl);
-    panel.appendChild(chk);
   } else if (state.mode==="halftone"){
     const ht = state.halftone;
     h.textContent = "Halftone";
@@ -1814,27 +1421,6 @@ function renderModeParams(){
       swRow.appendChild(swBtn);
       panel.appendChild(swRow);
     }
-  } else if (state.mode==="pixelsort"){
-    h.textContent = "Pixel Sort";
-    panel.appendChild(h);
-    selectRow(panel,"Direção", ()=>state.pixelsort.direction, v=>{state.pixelsort.direction=v; requestFullUpdate();}, [
-      {value:"horizontal", label:"Horizontal"},
-      {value:"vertical", label:"Vertical"},
-    ]);
-    sliderRow(panel,"Limiar", ()=>state.pixelsort.threshold, v=>{state.pixelsort.threshold=v; requestFullUpdate();});
-    sliderRow(panel,"% de linhas afetadas", ()=>state.pixelsort.chance, v=>{state.pixelsort.chance=v; requestFullUpdate();});
-    const chk = document.createElement("div"); chk.className="check";
-    const cb = document.createElement("input"); cb.type="checkbox"; cb.checked=state.pixelsort.reverse; cb.id="sortReverse";
-    const cl = document.createElement("label"); cl.htmlFor="sortReverse"; cl.textContent="Inverter ordem";
-    cb.addEventListener("change", ()=>{ state.pixelsort.reverse=cb.checked; requestFullUpdate(); });
-    chk.appendChild(cb); chk.appendChild(cl);
-    panel.appendChild(chk);
-    const btnrow = document.createElement("div"); btnrow.className="btnrow";
-    const regen = document.createElement("button"); regen.className="ghost"; regen.style.flex="1";
-    regen.textContent = "Nova variação";
-    regen.addEventListener("click", requestFullUpdate);
-    btnrow.appendChild(regen);
-    panel.appendChild(btnrow);
   } else if (state.mode==="crosshatch"){
     h.textContent = "Crosshatch";
     panel.appendChild(h);

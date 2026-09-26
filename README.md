@@ -1,18 +1,14 @@
 # Type FX
 
-Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experimental — distorção, degradação e colapso do texto. Tudo roda no navegador; nada é enviado para fora.
+Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experimental — blur, halftone e hachura sobre o texto. Tudo roda no navegador; nada é enviado para fora.
 
 ## Modos
 
 - **Blur / Grão** — borrão com granulado/dither, tipo spray atmosférico.
-- **Derreter** — fios de tinta escorrendo das letras, com variações geradas por ruído.
-- **Degradação** — glitch de faixas e falha de tinta, tipo fotocópia ruim.
-- **Bloco denso** — texto corrido sem espaços, quebrado em linhas justificadas, formando um bloco sólido.
 - **Halftone** — pontos paramétricos (tamanho mín./máx., raio do canto de quadrado a círculo, ângulo, ruído) em grade Regular, Benday ou Hex, com:
   - desenho do ponto: proporção 1:1 ou largura/altura aleatória, sobreposição geral e por eixo;
   - fusão de área forte (2×2 a 4×4) para regiões sólidas;
   - meios-tons: até 6 faixas de tom, cada uma com cor e forma própria (redondo, cruz, anel, losango, estrela), rampa automática fundo → tinta, modo de mesclagem e troca aleatória de tom.
-- **Pixel Sort** — ordenação de pixels por luminância em linhas ou colunas.
 - **Crosshatch** — hachura cruzada em camadas conforme o tom.
 
 ## Painéis globais
