@@ -14,7 +14,7 @@ Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experi
 ## Painéis globais
 
 - **Texto** — alinhamento à esquerda, centro ou direita.
-- **Fonte** — família (lista de fontes do sistema ou upload TTF/OTF/WOFF/WOFF2), tamanho, entrelinha, largura/altura do texto, kerning e blur prévio.
+- **Fonte** — família (34 fontes do Google Fonts em sans, condensada, serif, mono, display, pixel e manuscrita, baixadas só quando escolhidas; fontes do sistema; ou upload TTF/OTF/WOFF/WOFF2), tamanho, entrelinha, largura/altura do texto, kerning e blur prévio.
 - **Tinta** — cor da tinta.
 - **Fundo** — liso, degradê (ângulo + 4 cores com posição) ou imagem carregada.
 - **Ajustes** — limiar (engorda/afina a tinta), inverter, brilho, contraste e gama.

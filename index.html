@@ -91,6 +91,7 @@
   .filebtn:hover .fakebtn{ background:var(--ink); color:#fff; }
   .fontname{ font-size:10px; color:var(--muted); margin:-4px 0 8px; }
   .hint{ font-size:10px; color:var(--muted); margin:-4px 0 8px; line-height:1.4; }
+  .hint:empty{ display:none; }
   .subhead{
     border-top:1px solid var(--ink); margin:10px 0 8px; padding-top:8px; font-size:10px;
     text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
@@ -144,6 +145,7 @@
         <label for="fontFamily">Família</label>
         <select id="fontFamily"></select>
       </div>
+      <div class="hint" id="fontStatus" role="status"></div>
       <div class="btnrow">
         <label class="filebtn" style="flex:1">
           <input type="file" id="fontUpload" accept=".ttf,.otf,.woff,.woff2" style="display:none">
@@ -295,22 +297,79 @@
 <script>
 "use strict";
 
+// fontes com "google" são baixadas do Google Fonts só quando escolhidas
+// (loadGoogleFont) — a página não carrega dezenas de fontes à toa, e uma
+// que falhe não derruba as outras.
+function gf(value, name, group, weight=400){
+  return { value, label:name, group, css:`"${name}"`, weight, google:name };
+}
 const FONT_FAMILIES = [
-  { value:"archivo",   label:"Archivo Black", css:'"Archivo"',                    weight:900 },
-  { value:"system",    label:"Sistema",       css:"system-ui, sans-serif",        weight:900 },
-  { value:"arial",     label:"Arial",         css:"Arial, sans-serif",            weight:900 },
-  { value:"helvetica", label:"Helvetica",     css:"Helvetica, Arial, sans-serif", weight:900 },
-  { value:"impact",    label:"Impact",        css:"Impact, sans-serif",           weight:400 },
-  { value:"arialblack",label:"Arial Black",   css:'"Arial Black", sans-serif',    weight:900 },
-  { value:"futura",    label:"Futura",        css:"Futura, sans-serif",           weight:700 },
-  { value:"gillsans",  label:"Gill Sans",     css:'"Gill Sans", sans-serif',      weight:700 },
-  { value:"trebuchet", label:"Trebuchet MS",  css:'"Trebuchet MS", sans-serif',   weight:900 },
-  { value:"verdana",   label:"Verdana",       css:"Verdana, sans-serif",          weight:900 },
-  { value:"georgia",   label:"Georgia",       css:"Georgia, serif",               weight:700 },
-  { value:"times",     label:"Times New Roman", css:'"Times New Roman", serif',   weight:700 },
-  { value:"courier",   label:"Courier New",   css:'"Courier New", monospace',     weight:700 },
-  { value:"mono",      label:"Monoespaçada",  css:"monospace",                    weight:700 },
+  { value:"archivo", label:"Archivo Black", group:"Sans", css:'"Archivo"', weight:900 },
+  gf("inter",      "Inter",               "Sans", 900),
+  gf("spacegrot",  "Space Grotesk",       "Sans", 700),
+  gf("bricolage",  "Bricolage Grotesque", "Sans", 800),
+  gf("syne",       "Syne",                "Sans", 800),
+  gf("unbounded",  "Unbounded",           "Sans", 900),
+  gf("anton",      "Anton",               "Condensada"),
+  gf("bebas",      "Bebas Neue",          "Condensada"),
+  gf("oswald",     "Oswald",              "Condensada", 700),
+  gf("bigshoulders","Big Shoulders",      "Condensada", 900),
+  gf("playfair",   "Playfair Display",    "Serif", 900),
+  gf("dmserif",    "DM Serif Display",    "Serif"),
+  gf("fraunces",   "Fraunces",            "Serif", 900),
+  gf("abril",      "Abril Fatface",       "Serif"),
+  gf("instrument", "Instrument Serif",    "Serif"),
+  gf("ultra",      "Ultra",               "Serif"),
+  gf("spacemono",  "Space Mono",          "Mono", 700),
+  gf("jetbrains",  "JetBrains Mono",      "Mono", 800),
+  gf("plexmono",   "IBM Plex Mono",       "Mono", 700),
+  gf("majormono",  "Major Mono Display",  "Mono"),
+  gf("rubikmono",  "Rubik Mono One",      "Display"),
+  gf("dela",       "Dela Gothic One",     "Display"),
+  gf("climate",    "Climate Crisis",      "Display"),
+  gf("bungee",     "Bungee",              "Display"),
+  gf("monoton",    "Monoton",             "Display"),
+  gf("shrikhand",  "Shrikhand",           "Display"),
+  gf("tiltwarp",   "Tilt Warp",           "Display"),
+  gf("rubikglitch","Rubik Glitch",        "Display"),
+  gf("rubikwet",   "Rubik Wet Paint",     "Display"),
+  gf("silkscreen", "Silkscreen",          "Pixel", 700),
+  gf("pressstart", "Press Start 2P",      "Pixel"),
+  gf("vt323",      "VT323",               "Pixel"),
+  gf("marker",     "Permanent Marker",    "Manuscrita"),
+  gf("rocksalt",   "Rock Salt",           "Manuscrita"),
+  { value:"system",    label:"Sistema (UI)",    group:"Do sistema", css:"system-ui, sans-serif",        weight:900 },
+  { value:"arial",     label:"Arial",           group:"Do sistema", css:"Arial, sans-serif",            weight:900 },
+  { value:"helvetica", label:"Helvetica",       group:"Do sistema", css:"Helvetica, Arial, sans-serif", weight:900 },
+  { value:"impact",    label:"Impact",          group:"Do sistema", css:"Impact, sans-serif",           weight:400 },
+  { value:"arialblack",label:"Arial Black",     group:"Do sistema", css:'"Arial Black", sans-serif',    weight:900 },
+  { value:"futura",    label:"Futura",          group:"Do sistema", css:"Futura, sans-serif",           weight:700 },
+  { value:"gillsans",  label:"Gill Sans",       group:"Do sistema", css:'"Gill Sans", sans-serif',      weight:700 },
+  { value:"trebuchet", label:"Trebuchet MS",    group:"Do sistema", css:'"Trebuchet MS", sans-serif',   weight:900 },
+  { value:"verdana",   label:"Verdana",         group:"Do sistema", css:"Verdana, sans-serif",          weight:900 },
+  { value:"georgia",   label:"Georgia",         group:"Do sistema", css:"Georgia, serif",               weight:700 },
+  { value:"times",     label:"Times New Roman", group:"Do sistema", css:'"Times New Roman", serif',     weight:700 },
+  { value:"courier",   label:"Courier New",     group:"Do sistema", css:'"Courier New", monospace',     weight:700 },
+  { value:"mono",      label:"Monoespaçada",    group:"Do sistema", css:"monospace",                    weight:700 },
 ];
+
+const googleFontLoads = new Map();
+function loadGoogleFont(f){
+  if (!googleFontLoads.has(f.value)){
+    const p = (async ()=>{
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?family=${f.google.replace(/ /g,"+")}${f.weight!==400 ? `:wght@${f.weight}` : ""}&display=swap`;
+      await new Promise((res, rej)=>{ link.onload = res; link.onerror = rej; document.head.appendChild(link); });
+      // load() resolve com a lista de faces que casaram; vazia = não carregou
+      const faces = await document.fonts.load(`${f.weight} 100px "${f.google}"`);
+      if (faces.length === 0) throw new Error("fonte não encontrada");
+      return true;
+    })().catch(()=>{ googleFontLoads.delete(f.value); return false; });
+    googleFontLoads.set(f.value, p);
+  }
+  return googleFontLoads.get(f.value);
+}
 let customFontFamily = null; // preenchido se o usuário fizer upload de uma fonte
 
 function fontCss(px){
@@ -1199,21 +1258,40 @@ document.querySelectorAll("#textAlignBtns button").forEach(btn=>{
 const fontFamilySel = document.getElementById("fontFamily");
 function buildFontFamilyOptions(){
   fontFamilySel.innerHTML = "";
+  if (customFontFamily){
+    const g = document.createElement("optgroup"); g.label = "Carregada";
+    const o = document.createElement("option");
+    o.value = "custom"; o.textContent = customFontFamily.label;
+    g.appendChild(o);
+    fontFamilySel.appendChild(g);
+  }
+  const groups = {};
   FONT_FAMILIES.forEach(f=>{
+    if (!groups[f.group]){
+      groups[f.group] = document.createElement("optgroup");
+      groups[f.group].label = f.group;
+      fontFamilySel.appendChild(groups[f.group]);
+    }
     const o = document.createElement("option");
     o.value=f.value; o.textContent=f.label;
-    fontFamilySel.appendChild(o);
+    groups[f.group].appendChild(o);
   });
-  if (customFontFamily){
-    const o = document.createElement("option");
-    o.value = "custom"; o.textContent = customFontFamily.label + " (carregada)";
-    fontFamilySel.appendChild(o);
-  }
   fontFamilySel.value = state.font.family;
 }
 buildFontFamilyOptions();
-fontFamilySel.addEventListener("change", ()=>{
-  state.font.family = fontFamilySel.value;
+const fontStatus = document.getElementById("fontStatus");
+fontFamilySel.addEventListener("change", async ()=>{
+  const value = fontFamilySel.value;
+  state.font.family = value;
+  const f = FONT_FAMILIES.find(f=>f.value===value);
+  if (f && f.google){
+    fontStatus.textContent = "carregando fonte…";
+    const ok = await loadGoogleFont(f);
+    if (state.font.family !== value) return; // usuário já trocou de novo
+    fontStatus.textContent = ok ? "" : "não foi possível carregar essa fonte (sem internet?) — usando a padrão do sistema";
+  } else {
+    fontStatus.textContent = "";
+  }
   requestFullUpdate();
 });
 
@@ -1227,6 +1305,7 @@ document.getElementById("fontUpload").addEventListener("change", async (e)=>{
     document.fonts.add(face);
     customFontFamily = { label: file.name.replace(/\.[^.]+$/,""), css:'"TypeFXCustomFont"', weight:400 };
     state.font.family = "custom";
+    fontStatus.textContent = "";
     buildFontFamilyOptions();
     requestFullUpdate();
   } catch(err){
