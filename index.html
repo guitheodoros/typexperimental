@@ -8,18 +8,18 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Archivo:wght@700;900&display=swap" rel="stylesheet">
 <script>
-  // tema escolhido antes do primeiro paint: preferência salva, senão a do sistema
+  // tema escolhido antes do primeiro paint: preferência salva, senão escuro
   (function(){
     var t = "";
     try { t = localStorage.getItem("typexperimental-theme") || ""; } catch(e){}
-    if (t !== "light" && t !== "dark") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    if (t !== "light") t = "dark";
     document.documentElement.dataset.theme = t;
   })();
 </script>
 <style>
   /* dois temas da interface: claro (papel bege) e escuro (grafite). O tema
      vai em <html data-theme>, escolhido antes do primeiro paint pelo script
-     no <head> (preferência salva, senão a do sistema). As cores padrão da
+     no <head> (preferência salva, senão escuro). As cores padrão da
      arte (tinta/fundo) ficam no state e não mudam com o tema. */
   :root{
     color-scheme:light;
