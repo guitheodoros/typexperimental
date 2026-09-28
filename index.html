@@ -156,6 +156,67 @@
   input[type=color]::-webkit-color-swatch-wrapper{ padding:2px; }
   input[type=color]::-webkit-color-swatch{ border:1px solid var(--swatch-border); border-radius:2px; }
   input[type=color]::-moz-color-swatch{ border:1px solid var(--swatch-border); border-radius:2px; }
+  /* seletor de cor próprio: o input nativo fica escondido (continua sendo
+     a fonte do valor e dos eventos) e um botão abre a janelinha .cpick-pop */
+  input[type=color].cpick-native{ display:none; }
+  button.cpick-trigger{
+    display:flex; align-items:center; gap:8px; min-width:0; flex:2;
+    background:var(--field); color:var(--text); border:1px solid var(--control); border-radius:3px;
+    padding:4px 6px; box-shadow:none; text-shadow:none; text-transform:none; letter-spacing:0;
+    font-size:11px; font-variant-numeric:tabular-nums; text-align:left;
+  }
+  button.cpick-trigger:hover{ filter:none; border-color:var(--text); }
+  button.cpick-trigger:active{ transform:none; box-shadow:none; filter:none; }
+  button.cpick-trigger[aria-expanded="true"]{ border-color:var(--text); }
+  .cpick-chip{ width:16px; height:16px; border-radius:3px; flex:none; box-shadow:inset 0 0 0 1px var(--swatch-border); }
+  .cpick-code{ overflow:hidden; white-space:nowrap; color:var(--muted); }
+  .cpick-pop{
+    position:fixed; z-index:50; width:224px; padding:10px; display:grid; gap:10px;
+    background:var(--panel); color:var(--text); border:1px solid var(--control); border-radius:6px;
+    box-shadow:0 12px 32px rgba(0,0,0,.35);
+  }
+  .cpick-pop[hidden]{ display:none; }
+  .cpick-sv{
+    position:relative; height:140px; border-radius:4px; cursor:crosshair; touch-action:none;
+    background-image:linear-gradient(to top, #000, rgba(0,0,0,0)), linear-gradient(to right, #fff, rgba(255,255,255,0));
+  }
+  .cpick-sv:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  .cpick-sv-handle{
+    position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%;
+    border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.5), inset 0 0 0 1px rgba(0,0,0,.3); pointer-events:none;
+  }
+  input[type=range].cpick-hue{
+    -webkit-appearance:none; appearance:none; width:100%; height:12px; margin:0; border-radius:6px; flex:none;
+    background:linear-gradient(to right, #f00, #ff0 16.67%, #0f0 33.33%, #0ff 50%, #00f 66.67%, #f0f 83.33%, #f00);
+  }
+  input[type=range].cpick-hue::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%; background:transparent;
+    border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.5); cursor:pointer;
+  }
+  input[type=range].cpick-hue::-moz-range-thumb{
+    width:10px; height:10px; border-radius:50%; background:transparent;
+    border:2px solid #fff; box-shadow:0 0 0 1px rgba(0,0,0,.5); cursor:pointer;
+  }
+  input[type=range].cpick-hue:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+  .cpick-hexrow{ display:flex; align-items:center; gap:8px; }
+  .cpick-hexrow .cpick-chip{ width:26px; height:26px; border-radius:4px; }
+  .cpick-hex{
+    flex:1; min-width:0; font-family:inherit; font-size:12px; font-variant-numeric:tabular-nums;
+    background:var(--field); color:var(--text); border:1px solid var(--control); border-radius:3px; padding:5px 6px;
+  }
+  .cpick-hex:focus{ outline:none; border-color:var(--text); }
+  .cpick-hex.invalid{ border-color:var(--accent); }
+  .cpick-used-label{ font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:-4px; }
+  /* fileira de cores usadas: as bolinhas do ColorSelector do Spell UI */
+  .cpick-used{ display:flex; flex-wrap:wrap; gap:7px; }
+  .cpick-dot{
+    width:20px; height:20px; border-radius:50%; padding:0; border:none; cursor:pointer; flex:none;
+    box-shadow:inset 0 0 0 1px var(--swatch-border); text-shadow:none;
+    transition:transform .2s;
+  }
+  .cpick-dot:hover{ filter:none; transform:scale(1.1); }
+  .cpick-dot:active{ transform:scale(.9); box-shadow:inset 0 0 0 1px var(--swatch-border); }
+  .cpick-dot[aria-pressed="true"]{ box-shadow:inset 0 0 0 1px var(--swatch-border), 0 0 0 2px var(--panel), 0 0 0 4px var(--text); }
   textarea{
     width:100%; font-family:inherit; font-size:12px; border:1px solid var(--control); border-radius:3px;
     background:var(--field); color:var(--text); padding:6px; resize:vertical; min-height:70px;
@@ -1651,7 +1712,7 @@ function buildGradientStops(){
   state.background.stops.forEach((stop, i)=>{
     const row = document.createElement("div"); row.className = "row";
     const colorInp = document.createElement("input");
-    colorInp.type = "color"; colorInp.value = stop.color; colorInp.style.flex = "0 0 44px";
+    colorInp.type = "color"; colorInp.value = stop.color; colorInp.style.flex = "0 0 90px";
     colorInp.setAttribute("aria-label", `Cor da parada ${i+1}`);
     const posInp = document.createElement("input");
     posInp.type = "range"; posInp.autocomplete = "off"; posInp.min = 0; posInp.max = 100; posInp.value = stop.pos;
@@ -1943,6 +2004,218 @@ themeBtn.addEventListener("click", ()=>{
   syncThemeBtn();
 });
 syncThemeBtn();
+
+/* ---------------------------------------------------------------------
+   SELETOR DE COR
+   Cada <input type=color> vira um botão (amostra + hex) que abre uma
+   janelinha própria: quadrado saturação/brilho, faixa de matiz, campo hex e
+   a fileira de cores usadas (bolinhas no estilo do ColorSelector do Spell
+   UI). O input nativo continua no DOM, escondido: ele guarda o valor e
+   recebe os eventos "input"/"change", então nenhum handler existente muda.
+--------------------------------------------------------------------- */
+const RECENT_COLORS_KEY = "typexperimental-recent-colors";
+function rgbToHsv([r,g,b]){
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
+  let h = 0;
+  if (d){
+    if (max===r) h = ((g-b)/d) % 6;
+    else if (max===g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return [h, max ? d/max : 0, max];
+}
+function hsvToRgb(h, s, v){
+  const f = n=>{ const k = (n + h/60) % 6; return v - v*s*Math.max(0, Math.min(k, 4-k, 1)); };
+  return [f(5), f(3), f(1)];
+}
+function normalizeHex(str){
+  let v = str.trim().replace(/^#/, "").toLowerCase();
+  if (/^[0-9a-f]{3}$/.test(v)) v = v.split("").map(c=>c+c).join("");
+  return /^[0-9a-f]{6}$/.test(v) ? "#"+v : null;
+}
+function recentColors(){
+  try { const a = JSON.parse(localStorage.getItem(RECENT_COLORS_KEY) || "[]"); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function pushRecentColor(hex){
+  const list = [hex, ...recentColors().filter(c=>c!==hex)].slice(0, 8);
+  try { localStorage.setItem(RECENT_COLORS_KEY, JSON.stringify(list)); } catch(e){}
+}
+// cores que estão de fato na arte agora + as últimas escolhidas
+function usedColors(){
+  const list = [state.ink];
+  const bgMode = state.background.mode;
+  if (bgMode === "flat" || bgMode === "image") list.push(state.bg);
+  if (bgMode === "gradient") state.background.stops.forEach(s=>list.push(s.color));
+  if (state.mode === "halftone" && state.halftone.multiTone)
+    list.push(...currentToneColors().slice(0, state.halftone.toneLevels));
+  list.push(...recentColors());
+  const seen = new Set();
+  return list.map(c=>normalizeHex(c)).filter(c=>c && !seen.has(c) && seen.add(c)).slice(0, 14);
+}
+
+const cpick = (()=>{
+  const pop = document.createElement("div");
+  pop.className = "cpick-pop"; pop.hidden = true;
+  pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Seletor de cor");
+  pop.innerHTML = `
+    <div class="cpick-sv" tabindex="0" role="slider" aria-label="Saturação e brilho"><div class="cpick-sv-handle"></div></div>
+    <input type="range" class="cpick-hue" min="0" max="360" step="1" aria-label="Matiz">
+    <div class="cpick-hexrow"><span class="cpick-chip"></span><input type="text" class="cpick-hex" maxlength="7" spellcheck="false" autocomplete="off" aria-label="Código hex"></div>
+    <div class="cpick-used-label">Usadas</div>
+    <div class="cpick-used" role="group" aria-label="Cores usadas"></div>`;
+  document.body.appendChild(pop);
+  const sv = pop.querySelector(".cpick-sv"), handle = pop.querySelector(".cpick-sv-handle");
+  const hue = pop.querySelector(".cpick-hue"), hexIn = pop.querySelector(".cpick-hex");
+  const chip = pop.querySelector(".cpick-chip"), used = pop.querySelector(".cpick-used");
+  let input = null, trigger = null, hsv = [0,0,0], startValue = "";
+
+  function paint(){
+    const hex = rgbToHex(hsvToRgb(...hsv));
+    sv.style.backgroundColor = rgbToHex(hsvToRgb(hsv[0], 1, 1));
+    handle.style.left = (hsv[1]*100)+"%";
+    handle.style.top = ((1-hsv[2])*100)+"%";
+    sv.setAttribute("aria-valuetext", `saturação ${Math.round(hsv[1]*100)}%, brilho ${Math.round(hsv[2]*100)}%`);
+    hue.value = Math.round(hsv[0]);
+    chip.style.background = hex;
+    used.querySelectorAll(".cpick-dot").forEach(d=>d.setAttribute("aria-pressed", d.dataset.color===hex));
+    return hex;
+  }
+  // aplica no input nativo e avisa os handlers dele, como o picker nativo faria
+  function commit(fromHexField){
+    // painel refeito com a janelinha aberta (ex.: mudou "Níveis de tom")
+    if (!input.isConnected) return close(false);
+    const hex = paint();
+    if (!fromHexField){ hexIn.value = hex; hexIn.classList.remove("invalid"); }
+    if (input.value !== hex){
+      input.value = hex;
+      input.dispatchEvent(new Event("input", {bubbles:true}));
+    }
+  }
+  function setFromHex(hex){
+    const [h,s,v] = rgbToHsv(hexToRgb(hex));
+    // cinza/preto não têm matiz: mantém a da faixa em vez de pular pro vermelho
+    hsv = [(s===0 || v===0) ? hsv[0] : h, v===0 ? hsv[1] : s, v];
+  }
+  function buildUsed(){
+    used.innerHTML = "";
+    usedColors().forEach(c=>{
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "cpick-dot"; b.dataset.color = c;
+      b.style.background = c; b.title = c; b.setAttribute("aria-label", `Usar ${c}`);
+      b.addEventListener("click", ()=>{ setFromHex(c); commit(false); });
+      used.appendChild(b);
+    });
+  }
+  function place(){
+    if (!trigger || !trigger.isConnected) return close(false);
+    const r = trigger.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+    let top = r.bottom + 6;
+    if (top + ph > innerHeight - 8 && r.top - ph - 6 >= 8) top = r.top - ph - 6;
+    pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pw - 8)) + "px";
+    pop.style.top = Math.max(8, Math.min(top, innerHeight - ph - 8)) + "px";
+  }
+  function open(inp, trig){
+    if (input === inp) return close(true);
+    if (input) close(false);
+    input = inp; trigger = trig; startValue = inp.value;
+    hsv = [0,0,0]; setFromHex(inp.value);
+    buildUsed();
+    hexIn.value = paint(); hexIn.classList.remove("invalid");
+    pop.hidden = false;
+    trigger.setAttribute("aria-expanded", "true");
+    place();
+    sv.focus({preventScroll:true});
+  }
+  function close(refocus){
+    if (!input) return;
+    pop.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+    if (input.value !== startValue){
+      pushRecentColor(input.value);
+      input.dispatchEvent(new Event("change", {bubbles:true}));
+    }
+    if (refocus && trigger.isConnected) trigger.focus({preventScroll:true});
+    input = null; trigger = null;
+  }
+
+  function svFromPointer(e){
+    const r = sv.getBoundingClientRect();
+    hsv[1] = Math.min(1, Math.max(0, (e.clientX - r.left)/r.width));
+    hsv[2] = 1 - Math.min(1, Math.max(0, (e.clientY - r.top)/r.height));
+    commit(false);
+  }
+  sv.addEventListener("pointerdown", e=>{ sv.setPointerCapture(e.pointerId); svFromPointer(e); });
+  sv.addEventListener("pointermove", e=>{ if (sv.hasPointerCapture(e.pointerId)) svFromPointer(e); });
+  sv.addEventListener("keydown", e=>{
+    const step = e.shiftKey ? 0.1 : 0.01;
+    const moves = { ArrowLeft:[-step,0], ArrowRight:[step,0], ArrowUp:[0,step], ArrowDown:[0,-step] };
+    const m = moves[e.key]; if (!m) return;
+    e.preventDefault();
+    hsv[1] = Math.min(1, Math.max(0, hsv[1]+m[0]));
+    hsv[2] = Math.min(1, Math.max(0, hsv[2]+m[1]));
+    commit(false);
+  });
+  hue.addEventListener("input", ()=>{ hsv[0] = +hue.value; commit(false); });
+  hexIn.addEventListener("input", ()=>{
+    const hex = normalizeHex(hexIn.value);
+    hexIn.classList.toggle("invalid", !hex && hexIn.value.trim() !== "");
+    if (hex){ setFromHex(hex); commit(true); }
+  });
+  hexIn.addEventListener("keydown", e=>{ if (e.key === "Enter"){ e.preventDefault(); close(true); } });
+  hexIn.addEventListener("blur", ()=>{ if (input){ hexIn.value = input.value; hexIn.classList.remove("invalid"); } });
+  pop.addEventListener("keydown", e=>{ if (e.key === "Escape"){ e.preventDefault(); close(true); } });
+  document.addEventListener("pointerdown", e=>{
+    if (input && !pop.contains(e.target) && !trigger.contains(e.target)) close(false);
+  }, true);
+  window.addEventListener("scroll", ()=>{ if (input) place(); }, true);
+  window.addEventListener("resize", ()=>{ if (input) place(); });
+
+  return { open, close };
+})();
+
+const valueDesc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+function enhanceColorInput(inp){
+  if (inp.dataset.cpick) return;
+  inp.dataset.cpick = "1";
+  const trig = document.createElement("button");
+  trig.type = "button"; trig.className = "cpick-trigger";
+  trig.setAttribute("aria-haspopup", "dialog"); trig.setAttribute("aria-expanded", "false");
+  if (inp.style.flex) trig.style.flex = inp.style.flex;
+  trig.innerHTML = `<span class="cpick-chip"></span><span class="cpick-code"></span>`;
+  const chip = trig.firstChild, code = trig.lastChild;
+  if (inp.id){
+    trig.id = inp.id + "Pick";
+    document.querySelectorAll(`label[for="${inp.id}"]`).forEach(l=>{ l.htmlFor = trig.id; });
+  }
+  const lbl = inp.getAttribute("aria-label") || inp.closest(".row")?.querySelector("label")?.textContent || "Cor";
+  const sync = ()=>{
+    const v = valueDesc.get.call(inp);
+    chip.style.background = v; code.textContent = v.toUpperCase();
+    trig.setAttribute("aria-label", `${lbl}: ${v}`);
+  };
+  // valor trocado por código (rampa automática de tons, etc.) também
+  // atualiza o botão
+  Object.defineProperty(inp, "value", {
+    configurable: true,
+    get(){ return valueDesc.get.call(this); },
+    set(v){ valueDesc.set.call(this, v); sync(); },
+  });
+  inp.classList.add("cpick-native");
+  inp.after(trig);
+  sync();
+  trig.addEventListener("click", ()=>cpick.open(inp, trig));
+}
+document.querySelectorAll('input[type="color"]').forEach(enhanceColorInput);
+// campos de cor criados depois (tons do Halftone, paradas do degradê)
+new MutationObserver(muts=>{
+  for (const m of muts) for (const n of m.addedNodes){
+    if (n.nodeType !== 1) continue;
+    if (n.matches('input[type="color"]')) enhanceColorInput(n);
+    n.querySelectorAll?.('input[type="color"]').forEach(enhanceColorInput);
+  }
+}).observe(document.body, {childList:true, subtree:true});
 
 /* ---------------------------------------------------------------------
    INIT

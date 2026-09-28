@@ -13,7 +13,7 @@ Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experi
 
 ## Painéis globais
 
-Os painéis abrem e fecham como um acordeão (abrir um fecha o anterior); Modo e Exportar ficam sempre visíveis. O botão de lua/sol no topo alterna entre o tema claro e o escuro — abre no escuro por padrão e depois lembra a escolha.
+Os painéis abrem e fecham como um acordeão (abrir um fecha o anterior); Modo e Exportar ficam sempre visíveis. Os campos de cor abrem um seletor próprio, igual em qualquer navegador: quadrado de saturação/brilho, matiz, código hex editável e uma fileira com as cores usadas na arte e as últimas escolhidas. O botão de lua/sol no topo alterna entre o tema claro e o escuro — abre no escuro por padrão e depois lembra a escolha.
 
 - **Texto** — alinhamento à esquerda, centro ou direita.
 - **Fonte** — família (34 fontes do Google Fonts em sans, condensada, serif, mono, display, pixel e manuscrita, baixadas só quando escolhidas; fontes do sistema; ou upload TTF/OTF/WOFF/WOFF2), tamanho, entrelinha, largura/altura do texto, kerning e blur prévio.
