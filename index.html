@@ -116,6 +116,25 @@
   .segbtns button:hover{ background:#ddd8cc; }
   .segbtns button.active{ background:var(--ink); color:#fff; }
   footer{ margin-top:20px; font-size:10px; color:var(--muted); text-align:center; }
+  @media (max-width: 800px){
+    .layout{ grid-template-columns:1fr; }
+    /* no celular o preview sobe pro topo e fica grudado enquanto os
+       painéis rolam por baixo, em vez de ficar depois de todos eles. */
+    .canvas-wrap{
+      order:-1;
+      position:sticky;
+      top:0;
+      z-index:5;
+      margin:0 -16px 12px;
+      border-left:none;
+      border-right:none;
+      width:auto;
+      max-width:none;
+      justify-self:stretch;
+    }
+    #canvasHost{ width:100%; max-width:none; min-height:0; }
+    #glcanvas{ max-height:42vh; width:auto; height:auto; }
+  }
 </style>
 </head>
 <body>
