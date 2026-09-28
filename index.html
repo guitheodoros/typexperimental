@@ -7,10 +7,43 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Archivo:wght@700;900&display=swap" rel="stylesheet">
+<script>
+  // tema escolhido antes do primeiro paint: preferência salva, senão a do sistema
+  (function(){
+    var t = "";
+    try { t = localStorage.getItem("typexperimental-theme") || ""; } catch(e){}
+    if (t !== "light" && t !== "dark") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
 <style>
-  /* interface escura (grafite): a arte no preview é a única coisa clara
-     na tela. As cores padrão da arte (tinta/fundo) ficam no state, não aqui. */
+  /* dois temas da interface: claro (papel bege) e escuro (grafite). O tema
+     vai em <html data-theme>, escolhido antes do primeiro paint pelo script
+     no <head> (preferência salva, senão a do sistema). As cores padrão da
+     arte (tinta/fundo) ficam no state e não mudam com o tema. */
   :root{
+    color-scheme:light;
+    --bg:#e8e3d8;
+    --panel:#f5f2ea;
+    --field:#fff;
+    --hover:#ddd8cc;
+    --border:#111;
+    --control:#111;
+    --text:#111;
+    --on-text:#fff;
+    --muted:#6b6558;
+    --accent:#b3281c;
+    --accent-dark:#7a1a12;
+    --accent-top:#c94434;
+    --chk-border:rgba(17,17,17,.4);
+    --swatch-border:rgba(17,17,17,.35);
+    --seg-text:var(--text);
+    --btn-top:#2e2e2e; --btn-bottom:#111; --btn-border:#111; --btn-lip:#000;
+    --btn-text:#fff; --btn-hl:rgba(255,255,255,.16);
+    --pri-top:#2e2e2e; --pri-bottom:#111; --pri-border:#111; --pri-lip:#000;
+    --pri-text:#fff; --pri-hl:rgba(255,255,255,.16); --pri-tshadow:#000;
+  }
+  :root[data-theme="dark"]{
     color-scheme:dark;
     --bg:#141414;
     --panel:#1e1e1e;
@@ -19,9 +52,19 @@
     --border:#3a3a3a;
     --control:#4a4a4a;
     --text:#ececec;
+    --on-text:#141414;
     --muted:#8a8a8a;
     --accent:#e0402f;
     --accent-dark:#8f2215;
+    --accent-top:#ec5a47;
+    --chk-border:rgba(236,236,236,.35);
+    --swatch-border:#6a6a6a;
+    --seg-text:#bdbdbd;
+    --btn-top:#3a3a3a; --btn-bottom:#2a2a2a; --btn-border:#4a4a4a; --btn-lip:#0a0a0a;
+    --btn-text:#ececec; --btn-hl:rgba(255,255,255,.1);
+    /* no escuro a ação principal (Exportar) é o único botão claro */
+    --pri-top:#fff; --pri-bottom:#dcdcdc; --pri-border:#bdbdbd; --pri-lip:#8a8a8a;
+    --pri-text:#141414; --pri-hl:#fff; --pri-tshadow:rgba(255,255,255,.7);
   }
   *{box-sizing:border-box;}
   body{
@@ -81,16 +124,38 @@
     font-size:11px; font-weight:600; margin:0 0 10px; text-transform:uppercase;
     letter-spacing:1px; border-bottom:1px solid var(--border); padding-bottom:6px;
   }
+  /* painéis recolhíveis (como no Ditherfy): <details name="painel"> é um
+     acordeão nativo, abrir um fecha o que estava aberto */
+  details.panel > summary{ list-style:none; cursor:pointer; user-select:none; }
+  details.panel > summary::-webkit-details-marker{ display:none; }
+  details.panel > summary h2{
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  details.panel > summary h2::after{ content:"+"; font-size:15px; font-weight:400; line-height:10px; color:var(--muted); }
+  details.panel[open] > summary h2::after{ content:"−"; }
+  details.panel:not([open]) > summary h2{ margin-bottom:0; padding-bottom:0; border-bottom-color:transparent; }
+  details.panel > summary:hover h2::after{ color:var(--text); }
+  details.panel > summary:focus-visible{ outline:2px solid var(--accent); outline-offset:4px; }
+  .header-actions{ display:flex; align-items:center; gap:12px; }
+  #themeBtn{
+    width:28px; height:28px; padding:0; display:grid; place-items:center; flex:none;
+    background:var(--field); color:var(--text); border:1px solid var(--control); border-radius:50%;
+    box-shadow:none; text-shadow:none;
+  }
+  #themeBtn:hover{ background:var(--hover); filter:none; }
+  #themeBtn:active{ transform:scale(.92); box-shadow:none; }
+  #themeBtn svg{ width:14px; height:14px; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+  :root[data-theme="dark"] #themeBtn .moon, :root:not([data-theme="dark"]) #themeBtn .sun{ display:none; }
   .row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; }
   .row label{ font-size:11px; color:var(--muted); flex:1; }
   .row .val{ font-size:11px; min-width:34px; text-align:right; font-variant-numeric:tabular-nums; }
   input[type=range]{ flex:2; accent-color:var(--text); }
   select, input[type=color]{ font-family:inherit; font-size:11px; border:1px solid var(--control); border-radius:3px; background:var(--field); color:var(--text); padding:4px 6px; flex:2; }
-  select:hover, input[type=color]:hover{ border-color:#5c5c5c; }
+  select:hover, input[type=color]:hover{ border-color:var(--text); }
   /* borda na amostra pra tinta escura não sumir no campo escuro */
   input[type=color]::-webkit-color-swatch-wrapper{ padding:2px; }
-  input[type=color]::-webkit-color-swatch{ border:1px solid #6a6a6a; border-radius:2px; }
-  input[type=color]::-moz-color-swatch{ border:1px solid #6a6a6a; border-radius:2px; }
+  input[type=color]::-webkit-color-swatch{ border:1px solid var(--swatch-border); border-radius:2px; }
+  input[type=color]::-moz-color-swatch{ border:1px solid var(--swatch-border); border-radius:2px; }
   textarea{
     width:100%; font-family:inherit; font-size:12px; border:1px solid var(--control); border-radius:3px;
     background:var(--field); color:var(--text); padding:6px; resize:vertical; min-height:70px;
@@ -103,7 +168,7 @@
      É o próprio input nativo, então .checked, eventos e <label for> seguem iguais. */
   .check input[type=checkbox]{
     appearance:none; -webkit-appearance:none; margin:0; flex:none;
-    width:16px; height:16px; border:1.5px solid rgba(236,236,236,.35); border-radius:3px;
+    width:16px; height:16px; border:1.5px solid var(--chk-border); border-radius:3px;
     background:transparent; cursor:pointer; position:relative; display:grid; place-items:center;
     transition:background-color .2s, border-color .2s, transform .25s cubic-bezier(.34,1.56,.64,1);
   }
@@ -128,26 +193,23 @@
      empurrar o layout quando o botão afunda. */
   button{
     font-family:inherit; font-size:11px; text-transform:uppercase; letter-spacing:.5px;
-    color:var(--text); border:1px solid var(--control); border-radius:3px; padding:7px 10px; cursor:pointer;
-    background:linear-gradient(to bottom, #3a3a3a, #2a2a2a);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.1), 0 3px 0 #0a0a0a;
+    color:var(--btn-text); border:1px solid var(--btn-border); border-radius:3px; padding:7px 10px; cursor:pointer;
+    background:linear-gradient(to bottom, var(--btn-top), var(--btn-bottom));
+    box-shadow:inset 0 1px 0 var(--btn-hl), 0 3px 0 var(--btn-lip);
     text-shadow:0 1px 0 #000;
     transition:filter .2s, transform .1s, box-shadow .1s, background-color .15s, color .15s;
   }
   button:hover{ filter:brightness(1.2); }
-  button:active{ transform:translateY(2px); box-shadow:inset 0 1px 0 rgba(255,255,255,.1), 0 1px 0 #0a0a0a; filter:brightness(.95); }
+  button:active{ transform:translateY(2px); box-shadow:inset 0 1px 0 var(--btn-hl), 0 1px 0 var(--btn-lip); filter:brightness(.95); }
   button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   button:disabled{ cursor:progress; filter:none; transform:none; }
-  /* ação principal (Exportar): no escuro o Rich Button padrão do Spell UI
-     é claro, então o botão mais importante é o único claro da interface */
   button.primary{
-    color:#141414; border-color:#bdbdbd;
-    background:linear-gradient(to bottom, #ffffff, #dcdcdc);
-    box-shadow:inset 0 1px 0 #fff, 0 3px 0 #8a8a8a;
-    text-shadow:0 1px 0 rgba(255,255,255,.7);
+    color:var(--pri-text); border-color:var(--pri-border);
+    background:linear-gradient(to bottom, var(--pri-top), var(--pri-bottom));
+    box-shadow:inset 0 1px 0 var(--pri-hl), 0 3px 0 var(--pri-lip);
+    text-shadow:0 1px 0 var(--pri-tshadow);
   }
-  button.primary:hover{ filter:brightness(1.05); }
-  button.primary:active{ box-shadow:inset 0 1px 0 #fff, 0 1px 0 #8a8a8a; }
+  button.primary:active{ box-shadow:inset 0 1px 0 var(--pri-hl), 0 1px 0 var(--pri-lip); }
   button.ghost{
     background:var(--field); color:var(--text); text-shadow:none; border-color:var(--control);
     box-shadow:0 3px 0 var(--control);
@@ -191,7 +253,7 @@
   .modebtns{ margin-bottom:3px; }
   .modebtns button{ padding:9px 6px; font-size:10px; }
   .modebtns button.active{
-    color:#fff; background:linear-gradient(to bottom, #ec5a47, var(--accent)); border-color:var(--accent-dark);
+    color:#fff; background:linear-gradient(to bottom, var(--accent-top), var(--accent)); border-color:var(--accent-dark);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 3px 0 var(--accent-dark); text-shadow:0 1px 0 var(--accent-dark);
   }
   .modebtns button.active:active{ box-shadow:inset 0 1px 0 rgba(255,255,255,.25), 0 1px 0 var(--accent-dark); }
@@ -199,7 +261,7 @@
      sozinhos), só com cantos arredondados nas pontas e troca suave */
   .segbtns{ display:grid; grid-template-columns:1fr 1fr 1fr; margin-top:8px; }
   .segbtns button{
-    padding:6px 4px; font-size:10px; background:transparent; color:#bdbdbd;
+    padding:6px 4px; font-size:10px; background:transparent; color:var(--seg-text);
     border-color:var(--control); border-radius:0; box-shadow:none; text-shadow:none;
   }
   .segbtns button:first-child{ border-radius:3px 0 0 3px; }
@@ -207,7 +269,7 @@
   .segbtns button + button{ border-left:none; }
   .segbtns button:hover{ background:var(--hover); color:var(--text); filter:none; }
   .segbtns button:active{ transform:none; box-shadow:none; filter:none; }
-  .segbtns button.active{ background:var(--text); border-color:var(--text); color:#141414; }
+  .segbtns button.active{ background:var(--text); border-color:var(--text); color:var(--on-text); }
   footer{ margin-top:20px; font-size:10px; color:var(--muted); text-align:center; }
   @media (max-width: 800px){
     .layout{ grid-template-columns:1fr; }
@@ -235,7 +297,13 @@
   <div>
     <h1>Typexperimental</h1>
   </div>
-  <a href="https://theodoros.cc" target="_blank" rel="noopener">theodoros.cc</a>
+  <div class="header-actions">
+    <a href="https://theodoros.cc" target="_blank" rel="noopener">theodoros.cc</a>
+    <button id="themeBtn" type="button">
+      <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 15.2A8.5 8.5 0 0 1 8.8 3.6 8.5 8.5 0 1 0 20.4 15.2Z"/></svg>
+      <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+    </button>
+  </div>
 </header>
 
 <div class="layout">
@@ -250,18 +318,18 @@
       </div>
     </div>
 
-    <div class="panel">
-      <h2>Texto</h2>
+    <details class="panel" name="painel" open>
+      <summary><h2>Texto</h2></summary>
       <textarea id="textInput"></textarea>
       <div class="segbtns" id="textAlignBtns" role="group" aria-label="Alinhamento do texto">
         <button data-align="left">Esquerda</button>
         <button data-align="center" class="active">Centro</button>
         <button data-align="right">Direita</button>
       </div>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Fonte</h2>
+    <details class="panel" name="painel">
+      <summary><h2>Fonte</h2></summary>
       <div class="row">
         <label for="fontFamily">Família</label>
         <select id="fontFamily"></select>
@@ -303,18 +371,18 @@
         <input type="range" id="fontBlur" autocomplete="off" min="0" max="100" value="0">
         <span class="val" id="fontBlurVal">0%</span>
       </div>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Tinta</h2>
+    <details class="panel" name="painel">
+      <summary><h2>Tinta</h2></summary>
       <div class="row">
         <label for="inkColor">Cor</label>
         <input type="color" id="inkColor" value="#111111">
       </div>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Fundo</h2>
+    <details class="panel" name="painel">
+      <summary><h2>Fundo</h2></summary>
       <div class="row">
         <label for="bgMode">Tipo</label>
         <select id="bgMode">
@@ -346,10 +414,10 @@
         </div>
         <div class="hint" id="bgImageName" style="margin-top:6px">nenhuma imagem carregada</div>
       </div>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Ajustes</h2>
+    <details class="panel" name="painel">
+      <summary><h2>Ajustes</h2></summary>
       <div class="row">
         <label for="adjBias">Limiar (peso)</label>
         <input type="range" id="adjBias" autocomplete="off" min="-100" max="100" value="0">
@@ -375,10 +443,10 @@
         <input type="range" id="adjGamma" autocomplete="off" min="40" max="250" value="100">
         <span class="val" id="adjGammaVal">100</span>
       </div>
-    </div>
+    </details>
 
-    <div class="panel">
-      <h2>Formato</h2>
+    <details class="panel" name="painel">
+      <summary><h2>Formato</h2></summary>
       <div class="row">
         <label for="formatSel">Proporção</label>
         <select id="formatSel"></select>
@@ -388,7 +456,7 @@
         <input type="range" id="zoomSlider" autocomplete="off" min="50" max="300" value="100">
         <span class="val" id="zoomSliderVal">100%</span>
       </div>
-    </div>
+    </details>
 
     <div id="modeParams"></div>
 
@@ -1613,8 +1681,11 @@ function sliderRow(container, label, get, set, min=0, max=100, suffix="%"){
 
 function renderModeParams(){
   const c = document.getElementById("modeParams");
+  // o painel é refeito a cada troca de opção: guarda se estava aberto
+  const wasOpen = !!c.querySelector("details[open]");
   c.innerHTML = "";
-  const panel = document.createElement("div"); panel.className="panel";
+  const panel = document.createElement("details"); panel.className="panel";
+  panel.setAttribute("name","painel");
   const h = document.createElement("h2");
 
   if (state.mode==="blur"){
@@ -1718,7 +1789,13 @@ function renderModeParams(){
     sliderRow(panel,"Ângulo", ()=>state.crosshatch.angle, v=>state.crosshatch.angle=v, 0, 90, "°");
     sliderRow(panel,"Suavização", ()=>state.crosshatch.softness, v=>state.crosshatch.softness=v);
   }
+  const sum = document.createElement("summary");
+  sum.appendChild(h);
+  panel.prepend(sum);
   c.appendChild(panel);
+  // abrir por último: com "name", abrir fecha os outros do acordeão, e só
+  // vale fechar o painel aberto se o do modo era o que estava aberto
+  if (wasOpen) panel.open = true;
 }
 
 const TONE_SHAPES = [
@@ -1802,6 +1879,20 @@ exportBtn.addEventListener("click", ()=>{
     }, "image/png");
   }, 30);
 });
+
+const themeBtn = document.getElementById("themeBtn");
+function syncThemeBtn(){
+  const label = document.documentElement.dataset.theme === "dark" ? "Mudar para o modo claro" : "Mudar para o modo escuro";
+  themeBtn.setAttribute("aria-label", label);
+  themeBtn.title = label;
+}
+themeBtn.addEventListener("click", ()=>{
+  const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("typexperimental-theme", next); } catch(e){}
+  syncThemeBtn();
+});
+syncThemeBtn();
 
 /* ---------------------------------------------------------------------
    INIT
