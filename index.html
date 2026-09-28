@@ -1123,20 +1123,70 @@ function rasterizeSimple(){
   });
 }
 
-// desfoca o texto ANTES de qualquer efeito de modo — no canvas 2D, pra
-// que o Limiar (applyCoverageMapping, também na CPU) atue sobre a borda
-// já desfocada.
+// desfoca o texto ANTES de qualquer efeito de modo — na CPU, pra que o
+// Limiar (applyCoverageMapping, também na CPU) atue sobre a borda já
+// desfocada. Não usa ctx.filter: o Safari ignora o filter do canvas 2D e
+// o slider simplesmente não fazia nada lá. Gaussiano aproximado por 3
+// passadas de box blur (horizontal + vertical), só no canal alfa, que é
+// a cobertura de tinta que os shaders leem.
 function applyPreBlur(){
-  const blurPx = state.font.blur/100 * RENDER_H*0.025;
-  if (blurPx < 0.3) return;
-  const tmp = document.createElement("canvas");
-  tmp.width = rasterCanvas.width; tmp.height = rasterCanvas.height;
-  const tctx = tmp.getContext("2d");
-  tctx.filter = `blur(${blurPx}px)`;
-  tctx.drawImage(rasterCanvas, 0, 0);
+  const sigma = state.font.blur/100 * RENDER_H*0.025;
+  if (sigma < 0.3) return;
+  const w = rasterCanvas.width, h = rasterCanvas.height;
   const ctx = rasterCanvas.getContext("2d");
-  ctx.clearRect(0,0,rasterCanvas.width,rasterCanvas.height);
-  ctx.drawImage(tmp, 0, 0);
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  let a = new Float32Array(w*h), b = new Float32Array(w*h);
+  for (let i=0, j=3; i<a.length; i++, j+=4) a[i] = d[j];
+  for (const size of gaussBoxSizes(sigma, 3)){
+    const r = (size-1)/2;
+    boxBlurH(a, b, w, h, r);
+    boxBlurV(b, a, w, h, r);
+  }
+  for (let i=0, j=0; i<a.length; i++, j+=4){
+    d[j] = 255; d[j+1] = 255; d[j+2] = 255; d[j+3] = a[i];
+  }
+  ctx.putImageData(img, 0, 0);
+}
+// larguras de n box blurs cuja soma equivale a um gaussiano de desvio sigma
+function gaussBoxSizes(sigma, n){
+  const wIdeal = Math.sqrt(12*sigma*sigma/n + 1);
+  let wl = Math.floor(wIdeal);
+  if (wl % 2 === 0) wl--;
+  const m = Math.round((12*sigma*sigma - n*wl*wl - 4*n*wl - 3*n) / (-4*wl - 4));
+  return Array.from({length:n}, (_, i)=> i < m ? wl : wl+2);
+}
+// média móvel de raio r; fora da imagem conta como transparente (0)
+function boxBlurH(src, dst, w, h, r){
+  const inv = 1/(2*r+1);
+  for (let y=0; y<h; y++){
+    const row = y*w;
+    let acc = 0;
+    for (let x=0; x<=r && x<w; x++) acc += src[row+x];
+    for (let x=0; x<w; x++){
+      dst[row+x] = acc*inv;
+      const add = x+r+1, sub = x-r;
+      if (add < w) acc += src[row+add];
+      if (sub >= 0) acc -= src[row+sub];
+    }
+  }
+}
+// vertical percorrendo linha a linha (uma soma por coluna em acc): andar
+// coluna a coluna pula w posições na memória a cada pixel e é bem mais lento
+function boxBlurV(src, dst, w, h, r){
+  const inv = 1/(2*r+1);
+  const acc = new Float32Array(w);
+  for (let y=0; y<=r && y<h; y++){
+    const row = y*w;
+    for (let x=0; x<w; x++) acc[x] += src[row+x];
+  }
+  for (let y=0; y<h; y++){
+    const row = y*w;
+    for (let x=0; x<w; x++) dst[row+x] = acc[x]*inv;
+    const add = y+r+1, sub = y-r;
+    if (add < h){ const ra = add*w; for (let x=0; x<w; x++) acc[x] += src[ra+x]; }
+    if (sub >= 0){ const rs = sub*w; for (let x=0; x<w; x++) acc[x] -= src[rs+x]; }
+  }
 }
 
 // limiar + inverter mexem na cobertura de tinta antes de qualquer modo.
