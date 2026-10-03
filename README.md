@@ -18,7 +18,7 @@ Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experi
 - **Texto** — começa vazio; alinhamento à esquerda, centro ou direita.
 - **Fonte** — família (34 fontes do Google Fonts em sans, condensada, serif, mono, display, pixel e manuscrita, baixadas só quando escolhidas; fontes do sistema; ou upload TTF/OTF/WOFF/WOFF2), tamanho, entrelinha, largura/altura do texto, kerning e blur prévio.
 - **Tinta** — cor da tinta.
-- **Fundo** — liso, degradê (ângulo + 4 cores com posição), imagem carregada ou transparente.
+- **Fundo** — liso, degradê (ângulo + 4 cores com posição), imagem ou transparente. Em **Imagem**, uma grade com texturas de papel prontas (branco dobrado, kraft e granulado) e o botão **+** para carregar a sua. As texturas giram sozinhas nos formatos paisagem para a folha caber inteira, e podem ser **tingidas** com qualquer cor (multiplicação: o papel branco vira papel colorido mantendo dobras e grão).
 - **Ajustes** — limiar (engorda/afina a tinta), inverter, brilho, contraste e gama.
 - **Formato** — proporção e zoom. Retrato: 3:4, 4:5, 2:3, A4, 9:16, 1:2 · Quadrado: 1:1 · Paisagem: 5:4, 4:3, 3:2, A4, 16:9, 2:1.
 - **Exportar** — PNG em preview (1400px), 2K ou 4K no lado maior, com opção de fundo transparente; o nome do arquivo leva tamanho, data e hora. A escala dos pontos, da hachura e do grão acompanha a resolução, então o PNG fica igual ao preview.
@@ -43,4 +43,5 @@ Precisa de um navegador com WebGL2 (Chrome, Safari, Firefox ou Edge atuais). As 
 
 ## Estrutura
 
-- `index.html` — tudo em um arquivo: HTML, CSS e JS/GLSL.
+- `index.html` — a ferramenta inteira: HTML, CSS e JS/GLSL.
+- `texturas/web/` — as texturas de fundo em três tamanhos: `-200` (miniatura da grade), `-1400` (preview) e `-4096` (export 2K/4K). Cada tamanho só é baixado quando é usado.

@@ -1,2 +1,6 @@
 node_modules/
 .DS_Store
+
+# originais das texturas (pesados); só as versões otimizadas em texturas/web vão pro repositório
+texturas/*
+!texturas/web/

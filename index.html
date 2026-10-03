@@ -210,6 +210,23 @@
   .cpick-hex:focus{ outline:none; border-color:var(--text); }
   .cpick-hex.invalid{ border-color:var(--accent); }
   .cpick-used-label{ font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:-4px; }
+  /* grade de imagens de fundo: texturas prontas + upload */
+  .bg-tiles{ display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:8px; margin:2px 0 10px; }
+  button.bg-tile{
+    display:flex; flex-direction:column; align-items:stretch; gap:4px; min-width:0; min-height:0;
+    padding:0; background:none; border:none; box-shadow:none; text-shadow:none; border-radius:0;
+    color:var(--muted); font-size:9px; text-transform:none; letter-spacing:0; text-align:center;
+  }
+  button.bg-tile:hover{ filter:none; color:var(--text); }
+  button.bg-tile:active{ transform:scale(.96); box-shadow:none; filter:none; }
+  .bg-tile .thumb{
+    display:block; width:100%; aspect-ratio:3/4; object-fit:cover; border-radius:4px;
+    border:1px solid var(--control); background:var(--field);
+  }
+  .bg-tile .thumb.add{ display:grid; place-items:center; border-style:dashed; font-size:18px; font-weight:300; color:var(--muted); }
+  .bg-tile .name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  button.bg-tile[aria-checked="true"]{ color:var(--text); }
+  button.bg-tile[aria-checked="true"] .thumb{ outline:2px solid var(--text); outline-offset:2px; }
   /* fileira de cores usadas: as bolinhas do ColorSelector do Spell UI */
   .cpick-used{ display:flex; flex-wrap:wrap; gap:7px; }
   .cpick-dot{
@@ -507,13 +524,13 @@
         <div id="bgStops"></div>
       </div>
       <div id="bgImageRows">
-        <div class="btnrow">
-          <label class="filebtn" style="flex:1">
-            <input type="file" id="bgUpload" accept="image/*" style="display:none">
-            <span class="fakebtn">Carregar imagem de fundo</span>
-          </label>
+        <div class="bg-tiles" id="bgTiles" role="radiogroup" aria-label="Imagem de fundo"></div>
+        <input type="file" id="bgUpload" accept="image/*" style="display:none">
+        <div class="row" id="bgTintRow">
+          <label for="bgTint">Tingir</label>
+          <input type="color" id="bgTint" value="#ffffff">
         </div>
-        <div class="hint" id="bgImageName" style="margin-top:6px">nenhuma imagem carregada</div>
+        <div class="hint" id="bgImageName"></div>
       </div>
     </details>
 
@@ -722,6 +739,8 @@ const state = {
   adjust: { brightness: 0, contrast: 0, gamma: 100, bias: 0, invert: false },
   background: {
     mode: "flat", angle: 45,
+    texture: "branco", // chave de TEXTURES ou "upload"
+    tint: "#ffffff",
     stops: [
       { color:"#f2f0ea", pos:0 }, { color:"#eadfcd", pos:35 },
       { color:"#cdbca6", pos:70 }, { color:"#9a8d7c", pos:100 },
@@ -1316,10 +1335,77 @@ function applyCoverageMapping(){
   ctx.putImageData(img,0,0);
 }
 
+/* texturas prontas (fotos de papel em texturas/web). Três tamanhos por
+   textura: 200 (miniatura), 1400 (preview) e 4096 (export 2K/4K, ou quando
+   a de 1400 ficaria esticada no formato). Só baixa o que for usado. */
+const TEXTURES = [
+  { key:"branco",    label:"Branco" },
+  { key:"kraft",     label:"Kraft" },
+  { key:"granulado", label:"Granulado" },
+];
+const textureImgs = {}; // "chave-tamanho" -> {img, promise}
+function loadTexture(key, size){
+  const id = `${key}-${size}`;
+  if (!textureImgs[id]){
+    const img = new Image();
+    const entry = textureImgs[id] = { img:null, promise:null };
+    img.src = `texturas/web/${id}.jpg`;
+    entry.promise = img.decode().then(()=>{ entry.img = img; return img; })
+      .catch(err=>{ console.error("Falha ao carregar textura", id, err); delete textureImgs[id]; return null; });
+  }
+  return textureImgs[id].promise;
+}
+const textureLoaded = (key, size)=> textureImgs[`${key}-${size}`]?.img || null;
+// a foto de papel é retrato: em formato paisagem gira 90° pra folha caber
+// inteira em vez de ser cortada
+function textureRotates(img, w, h){
+  return w !== h && (img.naturalWidth < img.naturalHeight) !== (w < h);
+}
+function textureCoverScale(img, w, h){
+  const rot = textureRotates(img, w, h);
+  const iw = rot ? img.naturalHeight : img.naturalWidth, ih = rot ? img.naturalWidth : img.naturalHeight;
+  return Math.max(w/iw, h/ih);
+}
+// melhor imagem já baixada pra esse tamanho; pede a que falta e redesenha
+// quando ela chegar
+function pickTexture(key, w, h){
+  const lo = textureLoaded(key, 1400), hi = textureLoaded(key, 4096);
+  const needHi = Math.max(w, h) > PREVIEW_LONG_EDGE || (lo && textureCoverScale(lo, w, h) > 1.15);
+  if (needHi && hi) return hi;
+  if (needHi && !hi) loadTexture(key, 4096).then(img=>{ if (img) backgroundChanged(); });
+  if (lo) return lo;
+  if (hi) return hi;
+  loadTexture(key, 1400).then(img=>{ if (img) backgroundChanged(); });
+  return null;
+}
+function drawTexture(ctx, w, h, img){
+  const rot = textureRotates(img, w, h);
+  const scale = textureCoverScale(img, w, h);
+  ctx.save();
+  ctx.translate(w/2, h/2);
+  if (rot) ctx.rotate(Math.PI/2);
+  ctx.drawImage(img, -img.naturalWidth*scale/2, -img.naturalHeight*scale/2, img.naturalWidth*scale, img.naturalHeight*scale);
+  ctx.restore();
+  // tingir: multiplicar pela cor transforma o papel branco em papel colorido
+  // mantendo dobras e grão (branco = sem tingir)
+  const tint = state.background.tint.toLowerCase();
+  if (tint !== "#ffffff"){
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+}
+
 function drawBackground(ctx, w, h){
   const bgState = state.background;
   if (bgState.mode === "transparent") return;
-  if (bgState.mode === "image" && bgImage){
+  if (bgState.mode === "image" && bgState.texture !== "upload"){
+    const img = pickTexture(bgState.texture, w, h);
+    if (img) drawTexture(ctx, w, h, img);
+    else { ctx.fillStyle = state.bg; ctx.fillRect(0,0,w,h); } // enquanto baixa
+  } else if (bgState.mode === "image" && bgImage){
     // cor lisa por baixo: PNG com áreas transparentes não "vaza" pro export
     ctx.fillStyle = state.bg;
     ctx.fillRect(0,0,w,h);
@@ -1725,6 +1811,7 @@ function syncBackgroundUI(){
   document.getElementById("bgFlatRow").classList.toggle("hidden", m!=="flat");
   document.getElementById("bgGradientRows").classList.toggle("hidden", m!=="gradient");
   document.getElementById("bgImageRows").classList.toggle("hidden", m!=="image");
+  if (m === "image") buildBackgroundTiles();
   document.getElementById("bgTransparentHint").classList.toggle("hidden", m!=="transparent");
   document.getElementById("exportTransparent").checked = m==="transparent";
 }
@@ -1769,7 +1856,49 @@ function buildGradientStops(){
 buildGradientStops();
 
 let bgImageUrl = "";
-document.getElementById("bgUpload").addEventListener("change", async (e)=>{
+const bgTiles = document.getElementById("bgTiles");
+const bgUpload = document.getElementById("bgUpload");
+function makeTile(label, checked, thumb, onClick){
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "bg-tile";
+  if (checked !== null){ b.setAttribute("role", "radio"); b.setAttribute("aria-checked", checked); }
+  b.appendChild(thumb);
+  const name = document.createElement("span"); name.className = "name"; name.textContent = label;
+  b.appendChild(name);
+  b.title = label;
+  b.addEventListener("click", onClick);
+  return b;
+}
+function buildBackgroundTiles(){
+  const sel = state.background.texture;
+  bgTiles.innerHTML = "";
+  TEXTURES.forEach(t=>{
+    const img = document.createElement("img");
+    img.className = "thumb"; img.alt = ""; img.decoding = "async";
+    img.src = `texturas/web/${t.key}-200.jpg`;
+    bgTiles.appendChild(makeTile(t.label, sel===t.key, img, ()=>selectBackgroundTexture(t.key)));
+  });
+  if (bgImage){
+    const img = document.createElement("img");
+    img.className = "thumb"; img.alt = ""; img.src = bgImageUrl;
+    bgTiles.appendChild(makeTile("Sua imagem", sel==="upload", img, ()=>selectBackgroundTexture("upload")));
+  }
+  const add = document.createElement("span"); add.className = "thumb add"; add.textContent = "+";
+  const addTile = makeTile("Carregar", null, add, ()=>bgUpload.click());
+  addTile.setAttribute("aria-label", "Carregar imagem de fundo");
+  bgTiles.appendChild(addTile);
+  const upload = sel === "upload";
+  document.getElementById("bgTintRow").classList.toggle("hidden", upload);
+  document.getElementById("bgImageName").textContent = upload && bgImage ? bgImage.dataset.name : "";
+}
+function selectBackgroundTexture(key){
+  state.background.texture = key;
+  state.background.mode = "image";
+  syncBackgroundUI();
+  backgroundChanged();
+}
+document.getElementById("bgTint").addEventListener("input", (e)=>{ state.background.tint = e.target.value; backgroundChanged(); });
+bgUpload.addEventListener("change", async (e)=>{
   const file = e.target.files[0];
   if (!file) return;
   try {
@@ -1778,15 +1907,14 @@ document.getElementById("bgUpload").addEventListener("change", async (e)=>{
     const img = new Image();
     img.src = bgImageUrl;
     await img.decode();
+    img.dataset.name = file.name;
     bgImage = img;
-    state.background.mode = "image";
-    document.getElementById("bgImageName").textContent = file.name;
-    syncBackgroundUI();
-    backgroundChanged();
+    selectBackgroundTexture("upload");
   } catch(err){
     console.error("Falha ao carregar imagem de fundo", err);
     alert("Não foi possível carregar essa imagem.");
   }
+  bgUpload.value = ""; // permite carregar o mesmo arquivo de novo
 });
 
 document.getElementById("adjBias").addEventListener("input", (e)=>{
@@ -2012,8 +2140,15 @@ exportBtn.addEventListener("click", ()=>{
   const done = ()=>{ exportBtn.disabled = false; exportBtn.innerHTML = exportBtnLabel; };
   // setTimeout (não requestAnimationFrame) só pra o spinner aparecer
   // antes do render pesado: rAF nunca dispara com a aba em segundo plano.
-  setTimeout(()=>{
+  setTimeout(async ()=>{
     const longEdge = exportRes === "preview" ? PREVIEW_LONG_EDGE : +exportRes;
+    // textura de fundo: garante a versão grande baixada antes de renderizar,
+    // senão o PNG sairia com a de preview esticada (ou sem fundo)
+    const bgState = state.background;
+    if (bgState.mode === "image" && bgState.texture !== "upload"){
+      await loadTexture(bgState.texture, 1400);
+      await loadTexture(bgState.texture, 4096);
+    }
     setResolution(longEdge);
     rasterize();
     render();
@@ -2088,7 +2223,8 @@ function pushRecentColor(hex){
 function usedColors(){
   const list = [state.ink];
   const bgMode = state.background.mode;
-  if (bgMode === "flat" || bgMode === "image") list.push(state.bg);
+  if (bgMode === "flat" || (bgMode === "image" && state.background.texture === "upload")) list.push(state.bg);
+  if (bgMode === "image" && state.background.texture !== "upload") list.push(state.background.tint);
   if (bgMode === "gradient") state.background.stops.forEach(s=>list.push(s.color));
   if (state.mode === "halftone" && state.halftone.multiTone)
     list.push(...currentToneColors().slice(0, state.halftone.toneLevels));
