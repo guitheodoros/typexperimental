@@ -334,7 +334,13 @@
   .segbtns button:hover{ background:var(--hover); color:var(--text); filter:none; }
   .segbtns button:active{ transform:none; box-shadow:none; filter:none; }
   .segbtns button.active{ background:var(--text); border-color:var(--text); color:var(--on-text); }
-  footer{ margin-top:20px; font-size:10px; color:var(--muted); text-align:center; }
+  footer{
+    margin-top:16px;
+    font-size:10px;
+    color:var(--muted);
+    border-top:1px solid var(--muted);
+    padding-top:8px;
+  }
   @media (max-width: 800px){
     .layout{ grid-template-columns:1fr; }
     /* no celular o preview sobe pro topo e fica grudado enquanto os
@@ -581,7 +587,9 @@
   </div>
 </div>
 
-<footer>Typexperimental — ferramenta local, sem servidor. Nada é enviado para fora do seu navegador.</footer>
+<footer>
+  typexperimental &middot; processamento 100% local no navegador (webgl2) &middot; nenhuma imagem é enviada a servidor
+</footer>
 
 <script>
 "use strict";
