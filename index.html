@@ -1095,12 +1095,8 @@ uniform sampler2D uTex;
 uniform float uBrightness;
 uniform float uContrast;
 uniform float uGamma;
-uniform float uZoom;
-uniform sampler2D uBgTex;
 void main(){
-  vec2 zUv = (vUv-0.5)/max(uZoom,0.01) + 0.5;
-  bool outside = zUv.x<0.0 || zUv.x>1.0 || zUv.y<0.0 || zUv.y>1.0;
-  vec4 c = outside ? texture(uBgTex, vUv) : texture(uTex, clamp(zUv,0.0,1.0));
+  vec4 c = texture(uTex, vUv);
   // ajustes na cor "real" (des-pré-multiplicada); o alpha passa intacto
   vec3 col = c.a > 0.0 ? c.rgb/c.a : vec3(0.0);
   col = (col-0.5)*(1.0+uContrast) + 0.5 + uBrightness;
@@ -1235,6 +1231,12 @@ function rasterizeSimple(){
   const layout = computeTextLayout(ctx);
   if (!layout) return;
   ctx.fillStyle = "#fff";
+  // zoom (painel Formato) escala só o texto, em volta do centro: o fundo e a
+  // escala do efeito (pontos, hachura, grão) ficam fixos, como no Ditherfy
+  const z = state.zoom/100;
+  ctx.translate(RENDER_W/2, RENDER_H/2);
+  ctx.scale(z, z);
+  ctx.translate(-RENDER_W/2, -RENDER_H/2);
   layout.lines.forEach((l,i)=>{
     const y = layout.startY + i*layout.lineHeight;
     ctx.save();
@@ -1252,7 +1254,8 @@ function rasterizeSimple(){
 // passadas de box blur (horizontal + vertical), só no canal alfa, que é
 // a cobertura de tinta que os shaders leem.
 function applyPreBlur(){
-  const sigma = state.font.blur/100 * RENDER_H*0.025;
+  // acompanha o zoom: o desfoque é da letra, cresce junto com ela
+  const sigma = state.font.blur/100 * RENDER_H*0.025 * state.zoom/100;
   if (sigma < 0.3) return;
   const w = rasterCanvas.width, h = rasterCanvas.height;
   const ctx = rasterCanvas.getContext("2d");
@@ -1620,8 +1623,6 @@ function applyAdjustments(){
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uBrightness"), state.adjust.brightness/100);
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uContrast"), state.adjust.contrast/100);
   gl.uniform1f(gl.getUniformLocation(adjustProg,"uGamma"), Math.max(0.2, state.adjust.gamma/100));
-  gl.uniform1f(gl.getUniformLocation(adjustProg,"uZoom"), state.zoom/100);
-  bindBg(adjustProg);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0,0,RENDER_W,RENDER_H);
   drawQuad();
@@ -1698,7 +1699,7 @@ const zoomSliderVal = document.getElementById("zoomSliderVal");
 zoomSlider.addEventListener("input", ()=>{
   state.zoom = +zoomSlider.value;
   zoomSliderVal.textContent = zoomSlider.value+"%";
-  requestRender();
+  requestFullUpdate();
 });
 
 const textInput = document.getElementById("textInput");
