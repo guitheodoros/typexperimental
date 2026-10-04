@@ -1,6 +1,6 @@
 # Typexperimental
 
-Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experimental — blur, halftone e hachura sobre o texto. Processamento 100% local no navegador: nenhuma imagem é enviada a servidor.
+Ferramenta client-side (WebGL2, vanilla JS, sem build) de tipografia experimental — blur, halftone e hachura sobre o texto. Processamento 100% local no navegador: nenhuma imagem é enviada a servidor.
 
 **Site:** https://guitheodoros.github.io/typexperimental/
 
@@ -20,8 +20,8 @@ Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experi
 - **Tinta** — cor da tinta.
 - **Fundo** — liso, degradê (ângulo + 4 cores com posição), imagem ou transparente. Em **Imagem**, uma grade com texturas de papel prontas (branco dobrado, kraft e granulado) e o botão **+** para carregar a sua. As texturas giram sozinhas nos formatos paisagem para a folha caber inteira, e podem ser **tingidas** com qualquer cor (multiplicação: o papel branco vira papel colorido mantendo dobras e grão).
 - **Ajustes** — limiar (engorda/afina a tinta), inverter, brilho, contraste e gama.
-- **Formato** — proporção e zoom. Retrato: 3:4, 4:5, 2:3, A4, 9:16, 1:2 · Quadrado: 1:1 · Paisagem: 5:4, 4:3, 3:2, A4, 16:9, 2:1.
-- **Exportar** — PNG em preview (1400px), 2K ou 4K no lado maior, com opção de fundo transparente; o nome do arquivo leva tamanho, data e hora. A escala dos pontos, da hachura e do grão acompanha a resolução, então o PNG fica igual ao preview.
+- **Formato** — proporção e zoom. O zoom aumenta ou diminui só o texto: o fundo e o tamanho dos pontos, da hachura e do grão ficam fixos. Retrato: 3:4, 4:5, 2:3, A4, 9:16, 1:2 · Quadrado: 1:1 · Paisagem: 5:4, 4:3, 3:2, A4, 16:9, 2:1.
+- **Exportar** — PNG em preview (1400px), 2K ou 4K no lado maior, com opção de fundo transparente; o nome do arquivo leva tamanho, data e hora. A escala dos pontos, da hachura e do grão acompanha a resolução, então o PNG fica igual ao preview. Com textura de fundo, o export espera a versão de 4096px baixar; o PNG fica bem maior (~20MB no 4K) porque guarda a granulação da foto sem perda.
 
 ## Interface
 
@@ -33,15 +33,29 @@ Ferramenta client-side (WebGL2, vanilla JS, arquivo único) de tipografia experi
 
 ## Como usar
 
-Abra `index.html` no navegador — não precisa de build. Para servir localmente:
+Não precisa de build. Sirva a pasta com qualquer servidor estático e abra no navegador:
 
 ```bash
 python3 -m http.server 5178
 ```
+
+Abrir o `index.html` direto do disco (`file://`) funciona, mas as texturas de fundo não: o navegador bloqueia o uso no WebGL de imagens carregadas desse jeito.
 
 Precisa de um navegador com WebGL2 (Chrome, Safari, Firefox ou Edge atuais). As fontes do Google só são baixadas quando escolhidas; sem internet, a ferramenta usa as fontes do sistema.
 
 ## Estrutura
 
 - `index.html` — a ferramenta inteira: HTML, CSS e JS/GLSL.
-- `texturas/web/` — as texturas de fundo em três tamanhos: `-200` (miniatura da grade), `-1400` (preview) e `-4096` (export 2K/4K). Cada tamanho só é baixado quando é usado.
+- `texturas/web/` — as texturas de fundo em três tamanhos: `-200` (miniatura da grade), `-1400` (preview) e `-4096` (export 2K/4K, ou formatos em que a de 1400 ficaria esticada). Cada tamanho só é baixado quando é usado.
+- `texturas/` — os originais em alta resolução ficam só na máquina local (estão no `.gitignore`).
+
+### Adicionar uma textura
+
+1. Coloque o original em `texturas/`.
+2. Gere os três tamanhos em `texturas/web/` com o nome da chave (no macOS, com o `sips`):
+
+   ```bash
+   for spec in 4096:80 1400:82 200:78; do sips -Z ${spec%%:*} -s format jpeg -s formatOptions ${spec##*:} "texturas/Original.png" --out "texturas/web/chave-${spec%%:*}.jpg"; done
+   ```
+
+3. Acrescente `{ key:"chave", label:"Nome" }` à lista `TEXTURES` no `index.html`.
