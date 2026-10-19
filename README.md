@@ -18,7 +18,7 @@ Ferramenta client-side (WebGL2, vanilla JS, sem build) de tipografia experimenta
 - **Texto** — começa vazio; alinhamento à esquerda, centro ou direita.
 - **Fonte** — família (34 fontes do Google Fonts em sans, condensada, serif, mono, display, pixel e manuscrita, baixadas só quando escolhidas; fontes do sistema; ou upload TTF/OTF/WOFF/WOFF2), tamanho, entrelinha, largura/altura do texto, kerning e blur prévio.
 - **Tinta** — cor da tinta.
-- **Fundo** — liso, degradê (ângulo + 4 cores com posição), imagem ou transparente. Em **Imagem**, uma grade com texturas de papel prontas (branco dobrado, kraft e granulado) e o botão **+** para carregar a sua. As texturas giram sozinhas nos formatos paisagem para a folha caber inteira, e podem ser **tingidas** com qualquer cor (multiplicação: o papel branco vira papel colorido mantendo dobras e grão).
+- **Fundo** — liso, degradê (ângulo + 4 cores com posição), imagem ou transparente. Em **Imagem**, uma grade com texturas de papel prontas (branco dobrado, kraft e granulado), três materiais de capa (**Paper**, **Cardstock** e **Buckram**, a tela de encadernação) e o botão **+** para carregar a sua. As fotos de papel giram sozinhas nos formatos paisagem para a folha caber inteira; os materiais se repetem sem emenda numa escala fixa (a trama fica do mesmo tamanho em qualquer formato). Todas podem ser **tingidas** com qualquer cor (multiplicação: o papel branco vira papel colorido mantendo dobras e grão).
 - **Ajustes** — limiar (engorda/afina a tinta), inverter, brilho, contraste e gama.
 - **Formato** — proporção e zoom. O zoom aumenta ou diminui só o texto: o fundo e o tamanho dos pontos, da hachura e do grão ficam fixos. Retrato: 3:4, 4:5, 2:3, A4, 9:16, 1:2 · Quadrado: 1:1 · Paisagem: 5:4, 4:3, 3:2, A4, 16:9, 2:1.
 - **Exportar** — PNG em preview (1400px), 2K ou 4K no lado maior, com opção de fundo transparente; o nome do arquivo leva tamanho, data e hora. A escala dos pontos, da hachura e do grão acompanha a resolução, então o PNG fica igual ao preview. Com textura de fundo, o export espera a versão de 4096px baixar; o PNG fica bem maior (~20MB no 4K) porque guarda a granulação da foto sem perda.
@@ -47,6 +47,7 @@ Precisa de um navegador com WebGL2 (Chrome, Safari, Firefox ou Edge atuais). As 
 
 - `index.html` — a ferramenta inteira: HTML, CSS e JS/GLSL.
 - `texturas/web/` — as texturas de fundo em três tamanhos: `-200` (miniatura da grade), `-1400` (preview) e `-4096` (export 2K/4K, ou formatos em que a de 1400 ficaria esticada). Cada tamanho só é baixado quando é usado.
+  Os materiais de capa (`paper`, `cardstock`, `buckram`) usam um arquivo só, `-2048`, que se repete. Vêm do [ambientCG](https://ambientcg.com) (Paper001, Paper006 e Fabric039, licença CC0), com o relevo do mapa normal embutido como luz rasante.
 - `texturas/` — os originais em alta resolução ficam só na máquina local (estão no `.gitignore`).
 
 ### Adicionar uma textura

@@ -1349,12 +1349,20 @@ function applyCoverageMapping(){
 
 /* texturas prontas (fotos de papel em texturas/web). Três tamanhos por
    textura: 200 (miniatura), 1400 (preview) e 4096 (export 2K/4K, ou quando
-   a de 1400 ficaria esticada no formato). Só baixa o que for usado. */
+   a de 1400 ficaria esticada no formato). Só baixa o que for usado.
+   Materiais com `tile` (ambientCG, CC0) emendam sem costura: um arquivo só
+   de 2048px, repetido com a largura do tile = tile × lado maior da arte, como
+   material de capa (a trama fica do mesmo tamanho em qualquer formato). */
 const TEXTURES = [
   { key:"branco",    label:"Branco" },
   { key:"kraft",     label:"Kraft" },
   { key:"granulado", label:"Granulado" },
+  { key:"paper",     label:"Paper",     tile:0.5 },
+  { key:"cardstock", label:"Cardstock", tile:0.5 },
+  { key:"buckram",   label:"Buckram",   tile:0.25 },
 ];
+const TILE_SIZE = 2048;
+const textureInfo = (key)=> TEXTURES.find(t=>t.key===key);
 const textureImgs = {}; // "chave-tamanho" -> {img, promise}
 function loadTexture(key, size){
   const id = `${key}-${size}`;
@@ -1381,6 +1389,11 @@ function textureCoverScale(img, w, h){
 // melhor imagem já baixada pra esse tamanho; pede a que falta e redesenha
 // quando ela chegar
 function pickTexture(key, w, h){
+  if (textureInfo(key)?.tile){
+    const img = textureLoaded(key, TILE_SIZE);
+    if (!img) loadTexture(key, TILE_SIZE).then(img=>{ if (img) backgroundChanged(); });
+    return img;
+  }
   const lo = textureLoaded(key, 1400), hi = textureLoaded(key, 4096);
   const needHi = Math.max(w, h) > PREVIEW_LONG_EDGE || (lo && textureCoverScale(lo, w, h) > 1.15);
   if (needHi && hi) return hi;
@@ -1390,7 +1403,42 @@ function pickTexture(key, w, h){
   loadTexture(key, 1400).then(img=>{ if (img) backgroundChanged(); });
   return null;
 }
+// tile reduzido antes com suavização de qualidade: o pattern do canvas não
+// tem mipmap e, reduzindo direto, a trama fina vira moiré
+const tileCache = {}; // chave -> {w, canvas}
+function scaledTile(key, img, tw){
+  const c = tileCache[key];
+  if (c && c.w === tw && c.img === img) return c.canvas;
+  const th = Math.max(1, Math.round(tw*img.naturalHeight/img.naturalWidth));
+  let src = img, sw = img.naturalWidth, sh = img.naturalHeight;
+  // reduz em passos de no máx. 2× (Safari ignora imageSmoothingQuality)
+  while (sw/2 >= tw){
+    const step = document.createElement("canvas");
+    step.width = Math.round(sw/2); step.height = Math.round(sh/2);
+    const sctx = step.getContext("2d");
+    sctx.imageSmoothingQuality = "high";
+    sctx.drawImage(src, 0, 0, step.width, step.height);
+    src = step; sw = step.width; sh = step.height;
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = tw; canvas.height = th;
+  const cctx = canvas.getContext("2d");
+  cctx.imageSmoothingQuality = "high";
+  cctx.drawImage(src, 0, 0, tw, th);
+  tileCache[key] = { w:tw, img, canvas };
+  return canvas;
+}
 function drawTexture(ctx, w, h, img){
+  const tile = textureInfo(state.background.texture)?.tile;
+  if (tile){
+    const tw = Math.max(1, Math.round(tile*Math.max(w, h)));
+    ctx.save();
+    ctx.fillStyle = ctx.createPattern(scaledTile(state.background.texture, img, tw), "repeat");
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+    tintTexture(ctx, w, h);
+    return;
+  }
   const rot = textureRotates(img, w, h);
   const scale = textureCoverScale(img, w, h);
   ctx.save();
@@ -1398,8 +1446,11 @@ function drawTexture(ctx, w, h, img){
   if (rot) ctx.rotate(Math.PI/2);
   ctx.drawImage(img, -img.naturalWidth*scale/2, -img.naturalHeight*scale/2, img.naturalWidth*scale, img.naturalHeight*scale);
   ctx.restore();
-  // tingir: multiplicar pela cor transforma o papel branco em papel colorido
-  // mantendo dobras e grão (branco = sem tingir)
+  tintTexture(ctx, w, h);
+}
+// tingir: multiplicar pela cor transforma o papel branco em papel colorido
+// mantendo dobras e grão (branco = sem tingir)
+function tintTexture(ctx, w, h){
   const tint = state.background.tint.toLowerCase();
   if (tint !== "#ffffff"){
     ctx.save();
@@ -2156,8 +2207,8 @@ exportBtn.addEventListener("click", ()=>{
     // senão o PNG sairia com a de preview esticada (ou sem fundo)
     const bgState = state.background;
     if (bgState.mode === "image" && bgState.texture !== "upload"){
-      await loadTexture(bgState.texture, 1400);
-      await loadTexture(bgState.texture, 4096);
+      if (textureInfo(bgState.texture)?.tile) await loadTexture(bgState.texture, TILE_SIZE);
+      else { await loadTexture(bgState.texture, 1400); await loadTexture(bgState.texture, 4096); }
     }
     setResolution(longEdge);
     rasterize();
